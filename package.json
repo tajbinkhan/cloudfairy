@@ -1,0 +1,14 @@
+{
+  "name": "cloudfairy",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Desktop UI for Cloudflare quick tunnels",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.5"
+  }
+}

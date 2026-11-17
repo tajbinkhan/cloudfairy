@@ -1,0 +1,31 @@
+[package]
+name = "cloudfairy"
+version = "0.1.0"
+description = "Desktop UI for Cloudflare quick tunnels"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-clipboard-manager = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "io-util", "sync", "time", "net", "fs", "macros"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+futures-util = "0.3"
+flate2 = "1"
+tar = "0.4"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+which = "8"
+
+[profile.release]
+lto = true
+opt-level = "s"
+strip = true
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }

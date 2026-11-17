@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cloudfairy</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icon.png" alt="" width="28" height="28" />
+      <span>Cloudfairy</span>
+    </div>
+    <button id="cf-chip" class="chip" type="button" title="cloudflared status">
+      <span class="chip-dot"></span><span id="cf-chip-text">Checking cloudflared…</span>
+    </button>
+    <button id="open-settings" class="icon-btn" type="button" title="Settings" aria-label="Settings"></button>
+  </header>
+
+  <main class="page">
+    <section id="setup" class="setup" hidden>
+      <div class="setup-text">
+        <h2>One more thing: cloudflared</h2>
+        <p id="setup-reason">Cloudfairy uses Cloudflare's free <code>cloudflared</code> tool to create tunnels, and it isn't installed yet.</p>
+      </div>
+      <div class="setup-actions">
+        <button class="btn primary" type="button" data-download>Download cloudflared</button>
+        <button class="btn ghost" type="button" data-open-settings>I have it already</button>
+      </div>
+      <div class="progress" hidden><div class="progress-bar"></div><span class="progress-text"></span></div>
+    </section>
+
+    <form id="composer" class="composer" autocomplete="off">
+      <div class="composer-fields">
+        <label class="field grow">
+          <span>Local port or address</span>
+          <input id="target" name="target" placeholder="3000 or localhost:5173" spellcheck="false" required />
+        </label>
+        <label class="field">
+          <span>Name <em>(optional)</em></span>
+          <input id="name" name="name" placeholder="My app" />
+        </label>
+        <button class="btn primary" type="submit">Create tunnel</button>
+      </div>
+      <p id="composer-error" class="form-error" role="alert"></p>
+    </form>
+
+    <section id="list" class="list" aria-live="polite"></section>
+
+    <section id="empty" class="empty" hidden>
+      <div class="empty-art" aria-hidden="true"></div>
+      <h2>Share something running on your computer</h2>
+      <p>Type the port your app runs on (for example <code>3000</code>) and Cloudfairy gives you a public
+        <code>trycloudflare.com</code> link anyone can open. No Cloudflare account needed.</p>
+    </section>
+  </main>
+
+  <dialog id="settings-dialog" class="dialog">
+    <form method="dialog" id="settings-form">
+      <h2>Settings</h2>
+
+      <div class="cf-box">
+        <div class="cf-box-row">
+          <div>
+            <div class="label">cloudflared</div>
+            <div id="cf-detail" class="cf-detail">Checking…</div>
+            <div id="cf-path" class="cf-path mono"></div>
+          </div>
+          <button class="btn" type="button" data-download>Download latest</button>
+        </div>
+        <div class="progress" hidden><div class="progress-bar"></div><span class="progress-text"></span></div>
+      </div>
+
+      <label class="field">
+        <span>Custom cloudflared path</span>
+        <input id="cf-custom" class="mono" placeholder="Leave empty to detect automatically" spellcheck="false" />
+      </label>
+
+      <label class="field">
+        <span>Connection protocol</span>
+        <select id="protocol">
+          <option value="auto">Automatic (recommended)</option>
+          <option value="quic">QUIC</option>
+          <option value="http2">HTTP/2 (use if your network blocks UDP)</option>
+        </select>
+      </label>
+
+      <p id="settings-error" class="form-error" role="alert"></p>
+      <p class="hint">Changes apply to tunnels you start after saving.</p>
+
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel" type="submit" formnovalidate>Cancel</button>
+        <button class="btn primary" id="settings-save" type="button">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="edit-dialog" class="dialog">
+    <form method="dialog" id="edit-form">
+      <h2>Edit tunnel</h2>
+      <label class="field">
+        <span>Name</span>
+        <input id="edit-name" />
+      </label>
+      <label class="field">
+        <span>Local port or address</span>
+        <input id="edit-target" spellcheck="false" />
+      </label>
+      <p id="edit-error" class="form-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel" type="submit" formnovalidate>Cancel</button>
+        <button class="btn primary" id="edit-save" type="button">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="qr-dialog" class="dialog qr">
+    <form method="dialog">
+      <h2>Scan to open</h2>
+      <div id="qr-code" class="qr-code"></div>
+      <p id="qr-url" class="mono qr-url"></p>
+      <div class="dialog-actions">
+        <button class="btn primary" value="close" type="submit">Done</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
