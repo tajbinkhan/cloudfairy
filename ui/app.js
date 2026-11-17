@@ -27,6 +27,7 @@ const tunnels = new Map();
 const openLogs = new Set();
 let cfInfo = null;
 let downloading = false;
+let latestVersion = null;
 
 // ---------------------------------------------------------------- helpers
 
@@ -370,14 +371,47 @@ async function refreshCloudflared() {
     ? escapeHtml(cfInfo.problem)
     : "Cloudfairy uses Cloudflare's free <code>cloudflared</code> tool to create tunnels, and it isn't installed yet.";
 
-  $("#cf-detail").textContent = ok
-    ? `Version ${cfInfo.version} · ${SOURCE_LABEL[cfInfo.source] ?? ""}`
-    : cfInfo.problem ?? "Not found";
   $("#cf-path").textContent = cfInfo.path ?? "";
   for (const b of $$("[data-download]")) {
     b.hidden = !cfInfo.canDownload;
     b.disabled = downloading;
   }
+  renderUpdate();
+  checkLatest();
+}
+
+// Compares dotted versions like "2026.11.0" numerically. Returns >0 if a is newer.
+function compareVersions(a, b) {
+  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d) return d;
+  }
+  return 0;
+}
+
+// Settings shows the download button only when cloudflared is missing or a newer release exists.
+function renderUpdate() {
+  const ok = !!cfInfo?.path && !!cfInfo?.version;
+  const newer = ok && latestVersion && compareVersions(latestVersion, cfInfo.version) > 0;
+  const upToDate = ok && latestVersion && !newer;
+  $("#cf-detail").textContent = ok
+    ? `Version ${cfInfo.version} · ${SOURCE_LABEL[cfInfo.source] ?? ""}${upToDate ? " · up to date" : ""}`
+    : cfInfo?.problem ?? "Not found";
+  const btn = $("#cf-update");
+  btn.hidden = !cfInfo?.canDownload || (ok && !newer);
+  if (!downloading) btn.textContent = ok ? `Update to ${latestVersion}` : "Download cloudflared";
+  btn.dataset.label = btn.textContent;
+}
+
+async function checkLatest() {
+  try {
+    latestVersion = await invoke("latest_cloudflared");
+  } catch {
+    // Offline or GitHub unreachable: keep whatever we knew and hide the update button.
+  }
+  if (cfInfo) renderUpdate();
 }
 
 function showProgress({ received, total }) {

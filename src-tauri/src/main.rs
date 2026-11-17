@@ -145,6 +145,11 @@ async fn cloudflared_info(app: AppHandle, state: State<'_, AppState>) -> CmdResu
 }
 
 #[tauri::command]
+async fn latest_cloudflared() -> CmdResult<String> {
+    cloudflared::latest_version().await
+}
+
+#[tauri::command]
 async fn download_cloudflared(app: AppHandle, state: State<'_, AppState>) -> CmdResult<cloudflared::Info> {
     if cfg!(windows) && state.tunnels.any_active() {
         return Err("Stop all tunnels before updating cloudflared.".into());
@@ -205,6 +210,7 @@ fn main() {
             get_settings,
             save_settings,
             cloudflared_info,
+            latest_cloudflared,
             download_cloudflared,
             open_url,
             copy_text,
