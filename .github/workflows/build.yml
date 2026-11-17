@@ -125,4 +125,4 @@ jobs:
           releaseBody: Installers for Windows, macOS (universal) and Linux are attached below.
           releaseDraft: true
           # latest.json is what installed copies read to find updates.
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
