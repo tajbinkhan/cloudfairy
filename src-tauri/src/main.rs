@@ -1,12 +1,14 @@
 // Hide the extra console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod app_update;
 mod cloudflared;
 mod settings;
 mod tunnel;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use app_update::{AppUpdate, PendingUpdate};
 use serde::Serialize;
 use settings::{SettingsStore, TunnelConfig};
 use tauri::{AppHandle, Manager, RunEvent, State};
@@ -161,6 +163,27 @@ async fn download_cloudflared(app: AppHandle, state: State<'_, AppState>) -> Cmd
 }
 
 #[tauri::command]
+async fn check_app_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> CmdResult<Option<AppUpdate>> {
+    app_update::check(&app, &pending).await
+}
+
+#[tauri::command]
+async fn install_app_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    pending: State<'_, PendingUpdate>,
+) -> CmdResult<()> {
+    let (update, bytes) = app_update::download(&app, &pending).await?;
+    // Installing replaces the running app (on Windows it exits right away), so stop
+    // cloudflared now or its processes would outlive Cloudfairy.
+    state.tunnels.kill_all();
+    update
+        .install(bytes)
+        .map_err(|e| format!("Couldn't install the update: {e}"))?;
+    app.restart();
+}
+
+#[tauri::command]
 fn open_url(app: AppHandle, url: String) -> CmdResult<()> {
     if !url.starts_with("https://") && !url.starts_with("http://") {
         return Err("Only web links can be opened.".into());
@@ -191,6 +214,8 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(PendingUpdate::default())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             app.manage(AppState {
@@ -212,6 +237,8 @@ fn main() {
             cloudflared_info,
             latest_cloudflared,
             download_cloudflared,
+            check_app_update,
+            install_app_update,
             open_url,
             copy_text,
             qr_svg,

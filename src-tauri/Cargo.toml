@@ -1,6 +1,6 @@
 [package]
 name = "cloudfairy"
-version = "0.1.0"
+version = "0.1.1"
 description = "Desktop app (GUI) for Cloudflare quick tunnels: share localhost with a public trycloudflare.com link"
 authors = ["Tajbin Khan"]
 homepage = "https://tajbinkhan.github.io/cloudfairy/"
@@ -27,6 +27,7 @@ flate2 = "1"
 tar = "0.4"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 which = "8"
+tauri-plugin-updater = "2"
 
 [profile.release]
 lto = true

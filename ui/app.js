@@ -28,6 +28,7 @@ const openLogs = new Set();
 let cfInfo = null;
 let downloading = false;
 let latestVersion = null;
+let updatingApp = false;
 
 // ---------------------------------------------------------------- helpers
 
@@ -414,10 +415,10 @@ async function checkLatest() {
   if (cfInfo) renderUpdate();
 }
 
-function showProgress({ received, total }) {
+function showProgress({ received, total }, selector = ".progress[data-cf]") {
   const pct = total ? Math.min(100, (received / total) * 100) : null;
   const mb = (n) => (n / 1048576).toFixed(1);
-  for (const p of $$(".progress")) {
+  for (const p of $$(selector)) {
     p.hidden = false;
     $(".progress-bar", p).style.width = pct == null ? "100%" : `${pct}%`;
     $(".progress-text", p).textContent = total ? `${mb(received)} / ${mb(total)} MB` : `${mb(received)} MB`;
@@ -443,8 +444,43 @@ async function downloadCloudflared() {
   } finally {
     downloading = false;
     for (const b of $$("[data-download]")) b.textContent = b.dataset.label;
-    for (const p of $$(".progress")) p.hidden = true;
+    for (const p of $$(".progress[data-cf]")) p.hidden = true;
     await refreshCloudflared();
+  }
+}
+
+// ---------------------------------------------------------------- Cloudfairy updates
+
+async function checkAppUpdate() {
+  let update = null;
+  try {
+    update = await invoke("check_app_update");
+  } catch {
+    // Offline, GitHub unreachable, or no update for this kind of install: say nothing.
+  }
+  $("#app-update").hidden = !update;
+  if (!update) return;
+  $("#app-update-title").textContent = `Cloudfairy ${update.version} is available`;
+  $("#app-update-text").textContent =
+    `You have version ${update.currentVersion}. Updating restarts Cloudfairy and stops any running tunnels.`;
+}
+
+async function installAppUpdate() {
+  if (updatingApp) return;
+  updatingApp = true;
+  const install = $("#app-update-install");
+  const later = $("#app-update-later");
+  install.disabled = later.disabled = true;
+  install.textContent = "Downloading…";
+  showProgress({ received: 0, total: null }, ".app-progress");
+  try {
+    await invoke("install_app_update"); // restarts the app when it succeeds
+  } catch (e) {
+    $("#app-update-text").textContent = errText(e);
+    install.textContent = "Try again";
+    install.disabled = later.disabled = false;
+    $(".app-progress").hidden = true;
+    updatingApp = false;
   }
 }
 
@@ -484,6 +520,8 @@ async function init() {
   for (const b of $$("[data-open-settings]")) b.addEventListener("click", openSettings);
   for (const b of $$("[data-download]")) b.addEventListener("click", downloadCloudflared);
   $("#settings-save").addEventListener("click", saveSettings);
+  $("#app-update-install").addEventListener("click", installAppUpdate);
+  $("#app-update-later").addEventListener("click", () => ($("#app-update").hidden = true));
   $("#edit-save").addEventListener("click", saveEdit);
   $("#edit-form").addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -502,6 +540,7 @@ async function init() {
   });
   await listen("tunnel-log", ({ payload }) => appendLog(payload.id, payload.line));
   await listen("download-progress", ({ payload }) => showProgress(payload));
+  await listen("app-update-progress", ({ payload }) => showProgress(payload, ".app-progress"));
 
   const list = await invoke("list_tunnels");
   // Oldest first so prepend leaves the newest on top.
@@ -513,6 +552,7 @@ async function init() {
   setInterval(tickUptime, 1000);
   await refreshCloudflared();
   $("#target").focus();
+  checkAppUpdate();
 }
 
 init().catch((e) => {
