@@ -3,6 +3,7 @@
 use std::{
     io::Read,
     path::{Path, PathBuf},
+    sync::Mutex,
     time::{Duration, Instant},
 };
 
@@ -14,7 +15,12 @@ use tokio::process::Command;
 use crate::tunnel::hide_console;
 
 const RELEASE_BASE: &str = "https://github.com/cloudflare/cloudflared/releases/latest/download/";
+/// Redirects to `/releases/tag/<version>`; unlike the GitHub API it isn't rate limited.
+const LATEST_URL: &str = "https://github.com/cloudflare/cloudflared/releases/latest";
+const LATEST_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 pub const EVENT_DOWNLOAD: &str = "download-progress";
+
+static LATEST_CACHE: Mutex<Option<(Instant, String)>> = Mutex::new(None);
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -148,6 +154,40 @@ pub async fn info(app: &AppHandle, custom: Option<&str>) -> Info {
     }
 }
 
+fn http_client(redirects: reqwest::redirect::Policy) -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .user_agent(concat!("cloudfairy/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(Duration::from_secs(15))
+        .redirect(redirects)
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+/// Version of the newest official release, cached for a few hours.
+pub async fn latest_version() -> Result<String, String> {
+    if let Some((at, v)) = LATEST_CACHE.lock().unwrap().as_ref() {
+        if at.elapsed() < LATEST_TTL {
+            return Ok(v.clone());
+        }
+    }
+    let response = http_client(reqwest::redirect::Policy::none())?
+        .head(LATEST_URL)
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| format!("Couldn't check for updates: {e}"))?;
+    let version = response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|l| l.to_str().ok())
+        .and_then(|l| l.rsplit_once("/tag/"))
+        .map(|(_, tag)| tag.trim_start_matches('v').to_string())
+        .filter(|v| !v.is_empty())
+        .ok_or("Couldn't read the latest cloudflared version.")?;
+    *LATEST_CACHE.lock().unwrap() = Some((Instant::now(), version.clone()));
+    Ok(version)
+}
+
 /// Release asset for this OS/CPU, and whether it's a .tgz archive.
 fn asset() -> Option<(&'static str, bool)> {
     use std::env::consts::{ARCH, OS};
@@ -175,12 +215,7 @@ pub async fn download(app: &AppHandle) -> Result<PathBuf, String> {
         .await
         .map_err(|e| format!("Couldn't create {}: {e}", dir.display()))?;
 
-    let client = reqwest::Client::builder()
-        .user_agent(concat!("cloudfairy/", env!("CARGO_PKG_VERSION")))
-        .connect_timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let response = client
+    let response = http_client(reqwest::redirect::Policy::default())?
         .get(format!("{RELEASE_BASE}{asset}"))
         .send()
         .await
