@@ -20,6 +20,18 @@
   </header>
 
   <main class="page">
+    <section id="app-update" class="setup" hidden>
+      <div class="setup-text">
+        <h2 id="app-update-title">A new version of Cloudfairy is available</h2>
+        <p id="app-update-text"></p>
+      </div>
+      <div class="setup-actions">
+        <button id="app-update-install" class="btn primary" type="button">Update and restart</button>
+        <button id="app-update-later" class="btn ghost" type="button">Later</button>
+      </div>
+      <div class="progress app-progress" hidden><div class="progress-bar"></div><span class="progress-text"></span></div>
+    </section>
+
     <section id="setup" class="setup" hidden>
       <div class="setup-text">
         <h2>One more thing: cloudflared</h2>
@@ -29,7 +41,7 @@
         <button class="btn primary" type="button" data-download>Download cloudflared</button>
         <button class="btn ghost" type="button" data-open-settings>I have it already</button>
       </div>
-      <div class="progress" hidden><div class="progress-bar"></div><span class="progress-text"></span></div>
+      <div class="progress" data-cf hidden><div class="progress-bar"></div><span class="progress-text"></span></div>
     </section>
 
     <form id="composer" class="composer" autocomplete="off">
@@ -70,7 +82,7 @@
           </div>
           <button id="cf-update" class="btn" type="button" data-download hidden>Download latest</button>
         </div>
-        <div class="progress" hidden><div class="progress-bar"></div><span class="progress-text"></span></div>
+        <div class="progress" data-cf hidden><div class="progress-bar"></div><span class="progress-text"></span></div>
       </div>
 
       <label class="field">

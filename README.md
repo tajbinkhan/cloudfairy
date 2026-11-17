@@ -55,6 +55,7 @@ You don't need to install `cloudflared` first. If Cloudfairy can't find it, one 
 - **Live cloudflared logs** for each tunnel, with errors and warnings highlighted.
 - **Finds or downloads cloudflared.** It checks your Settings path first, then a copy it downloaded, then your `PATH` and the usual install locations (Homebrew, winget, Program Files).
 - **Settings:** a custom cloudflared path, and the protocol (Auto / QUIC / HTTP2). Use HTTP2 on networks that block UDP.
+- **Updates itself.** When a new version is out, Cloudfairy offers to install it when it opens, then restarts. Signed updates come from GitHub Releases.
 - **Tunnels are saved between launches.** They don't start automatically, and every cloudflared process is stopped when you quit the app.
 
 ## How it works
@@ -110,12 +111,15 @@ Built with Rust and [Tauri 2](https://v2.tauri.app). You need:
 | Windows | [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) ("Desktop development with C++"). WebView2 is already included in Windows 10/11. |
 
 ```bash
-npm install          # installs the Tauri CLI
-npm run dev          # run the app in development mode
-npm run build        # release build + installers in src-tauri/target/release/bundle/
+npm install             # installs the Tauri CLI
+npm run dev             # run the app in development mode
+npm run build:unsigned  # release build + installers in src-tauri/target/release/bundle/
 ```
 
-`npm run build` makes installers for the OS you run it on: `.deb`, `.rpm` and `.AppImage` on Linux,
+`npm run build` also signs the installers for the in-app updater, so it needs the signing key
+(see "CI, releases and code signing" below). Use `build:unsigned` without it.
+
+Both build commands make installers for the OS you run it on: `.deb`, `.rpm` and `.AppImage` on Linux,
 `.app` and `.dmg` on macOS, `.msi` and NSIS `.exe` on Windows.
 
 <details>
@@ -130,10 +134,17 @@ does this for you ([`.github/workflows/build.yml`](.github/workflows/build.yml))
 - **Pushing a version tag** creates a draft GitHub Release with every installer attached:
 
   ```bash
-  git tag v0.1.0 && git push origin v0.1.0
+  git tag v0.1.1 && git push origin v0.1.1
   ```
 
-  Keep `version` in `src-tauri/tauri.conf.json` in step with the tag.
+  Keep `version` in `src-tauri/tauri.conf.json` in step with the tag. Publish the draft to make
+  it the latest release. Installed copies then see the update.
+
+**Update signing.** The in-app updater only installs files signed with the project's private
+key. CI reads it from the `TAURI_SIGNING_PRIVATE_KEY` repository secret, and the matching
+public key is `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`. If the key is lost,
+installed copies can't update anymore, so keep a backup. To build signed installers locally,
+set `TAURI_SIGNING_PRIVATE_KEY` to the key file's path before `npm run build`.
 
 For apps you distribute, also set up code signing: Apple notarization on macOS, and a
 signing certificate on Windows so SmartScreen doesn't warn users. See the Tauri distribution docs.

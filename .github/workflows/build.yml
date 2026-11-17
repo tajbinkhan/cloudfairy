@@ -72,7 +72,17 @@ jobs:
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: --target universal-apple-darwin
     runs-on: ${{ matrix.os }}
+    env:
+      HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
     steps:
+      # A release without signed installers and latest.json would cut users off from updates.
+      - name: Require the update signing key for releases
+        if: github.ref_type == 'tag' && env.HAS_SIGNING_KEY != 'true'
+        shell: bash
+        run: |
+          echo "::error::Set the TAURI_SIGNING_PRIVATE_KEY repository secret before tagging a release."
+          exit 1
+
       - uses: actions/checkout@v7
 
       - name: Install Linux dependencies
@@ -101,11 +111,18 @@ jobs:
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the installers so the in-app updater accepts them. The matching public key
+          # is plugins.updater.pubkey in src-tauri/tauri.conf.json.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          args: ${{ matrix.args }}
+          # Without the signing key (pull requests from forks) build unsigned installers instead.
+          args: ${{ matrix.args }} ${{ env.HAS_SIGNING_KEY != 'true' && '--config src-tauri/tauri.unsigned.conf.json' || '' }}
           uploadWorkflowArtifacts: true
           # Only tag pushes publish a (draft) release; other runs just keep the artifacts.
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: Cloudfairy ${{ github.ref_name }}
           releaseBody: Installers for Windows, macOS (universal) and Linux are attached below.
           releaseDraft: true
+          # latest.json is what installed copies read to find updates.
+          includeUpdaterJson: true
