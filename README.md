@@ -1,81 +1,74 @@
-# Cloudfairy
+# Cloudfairy: a free Cloudflare Tunnel GUI to share localhost
 
-A desktop app for [Cloudflare quick tunnels](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/).
+<p align="center">
+  <a href="https://tajbinkhan.github.io/cloudfairy/"><img src="./assets/readme/hero.svg" width="100%" alt="Cloudfairy, a desktop app for Cloudflare quick tunnels. Type a port, get a public link: localhost:3000 becomes https://maple-ranges-quietly-orbit.trycloudflare.com."></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/tajbinkhan/cloudfairy/actions/workflows/build.yml"><img src="https://github.com/tajbinkhan/cloudfairy/actions/workflows/build.yml/badge.svg" alt="Build"></a>
+  <a href="https://github.com/tajbinkhan/cloudfairy/releases/latest"><img src="https://img.shields.io/github/v/release/tajbinkhan/cloudfairy?include_prereleases&sort=semver" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-informational" alt="Platforms: Windows, macOS, Linux">
+  <a href="https://v2.tauri.app"><img src="https://img.shields.io/badge/built%20with-Tauri%202-24c8db" alt="Built with Tauri 2"></a>
+</p>
+
+**Cloudfairy** is a free desktop app for [Cloudflare quick tunnels](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/).
 Type a local port and get a public `https://….trycloudflare.com` link, without running
 `cloudflared tunnel --url http://localhost:3000` in a terminal and copying the URL out of its logs.
+You don't need a Cloudflare account or a domain.
 
-Built with Rust and [Tauri 2](https://v2.tauri.app). Runs on Windows, macOS and Linux.
+Use it to show a dev server to a teammate, test a site on your phone, or receive webhooks on your
+laptop. It works like a simple ngrok alternative, on Cloudflare's network.
+
+<p align="center">
+  <b><a href="https://github.com/tajbinkhan/cloudfairy/releases/latest">Download</a></b> ·
+  <a href="https://tajbinkhan.github.io/cloudfairy/">Website</a> ·
+  <a href="#build-from-source">Build from source</a> ·
+  <a href="#troubleshooting">Troubleshooting</a>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/readme/app-dark.png">
+    <img src="./assets/readme/app-light.png" width="820" alt="The Cloudfairy window with three tunnels. Storefront (localhost:3000) is Live with a trycloudflare.com link and Copy, Open and QR buttons. Docs site (localhost:8080) is getting a URL and warns that nothing is answering on the port yet. API (localhost:8000) is stopped.">
+  </picture>
+</p>
+
+## Download
+
+Get the installer for your OS from [GitHub Releases](https://github.com/tajbinkhan/cloudfairy/releases/latest):
+
+| Platform | Installers |
+|---|---|
+| Windows 10 / 11 (x64) | `.msi`, `.exe` (NSIS) |
+| macOS (Apple Silicon and Intel) | `.dmg`, `.app` |
+| Linux (x64) | `.deb`, `.rpm`, `.AppImage` |
+
+You don't need to install `cloudflared` first. If Cloudfairy can't find it, one click downloads the official release.
 
 ## Features
 
-- **Several tunnels at once.** Each one has its own Start/Stop button, status, and uptime.
-- **Takes any local address:** `3000`, `:8080`, `localhost:5173`, `127.0.0.1:8000/app` or `https://localhost:8443`.
-- **One-click Copy, Open in browser, and QR code** (for opening the link on your phone).
-- **Live cloudflared logs** for each tunnel, with errors and warnings highlighted.
+- **Several tunnels at once**, each with its own Start/Stop button, status, and uptime.
+- **Any local address:** `3000`, `:8080`, `localhost:5173`, `127.0.0.1:8000/app` or `https://localhost:8443`.
+- **Copy, Open in browser, or show a QR code** to open the link on your phone.
 - **Checks your local server.** If nothing is listening on the port, a warning appears. It clears by itself once your server starts.
 - **Readable errors.** Rate limits, crashes and a missing binary show up on the tunnel's card.
-- **Finds or downloads cloudflared.** It checks your Settings path first, then a copy it downloaded, then your `PATH` and the usual install locations (Homebrew, winget, Program Files). If none is found, one click downloads the official release from GitHub.
+- **Live cloudflared logs** for each tunnel, with errors and warnings highlighted.
+- **Finds or downloads cloudflared.** It checks your Settings path first, then a copy it downloaded, then your `PATH` and the usual install locations (Homebrew, winget, Program Files).
 - **Settings:** a custom cloudflared path, and the protocol (Auto / QUIC / HTTP2). Use HTTP2 on networks that block UDP.
-- **Tunnels are saved between launches.** They don't start automatically. Every cloudflared process is stopped when you quit the app.
-
-## Prerequisites
-
-| | Needed |
-|---|---|
-| All | [Rust](https://rustup.rs) (stable) and [Node.js](https://nodejs.org) 18+ (only used to run the Tauri CLI) |
-| Linux | `sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev build-essential` (or your distro's equivalents) |
-| macOS | Xcode Command Line Tools: `xcode-select --install` |
-| Windows | [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) ("Desktop development with C++"). WebView2 is already included in Windows 10/11. |
-
-You don't need to install `cloudflared` beforehand. The app can download it for you.
-
-## Run and build
-
-```bash
-npm install          # installs the Tauri CLI
-npm run dev          # run the app in development mode
-npm run build        # release build + installers in src-tauri/target/release/bundle/
-```
-
-`npm run build` makes installers for the OS you run it on:
-
-- Linux: `.deb`, `.rpm`, `.AppImage`
-- macOS: `.app`, `.dmg`
-- Windows: `.msi`, NSIS `.exe`
-
-Tauri doesn't cross-compile installers, so each one is built on its own OS. GitHub Actions
-does this for you ([`.github/workflows/build.yml`](.github/workflows/build.yml)):
-
-- **Every push to `main` and every pull request:** runs clippy and the unit tests on all three
-  OSes. Then it builds Linux (x64), Windows (x64) and macOS (universal: Apple Silicon + Intel)
-  installers and attaches them to the workflow run as artifacts.
-- **Pushing a version tag** creates a draft GitHub Release with every installer attached:
-
-  ```bash
-  git tag v0.1.0 && git push origin v0.1.0
-  ```
-
-  Keep `version` in `src-tauri/tauri.conf.json` in step with the tag.
-
-For apps you distribute, also set up code signing: Apple notarization on macOS, and a
-signing certificate on Windows so SmartScreen doesn't warn users. See the Tauri distribution docs.
-
-## Tests
-
-```bash
-cd src-tauri
-cargo test                                         # unit tests: input parsing, log parsing, args
-cargo test -- --ignored quick_tunnel_end_to_end    # real tunnel through Cloudflare (needs network + cloudflared on PATH)
-```
-
-The end-to-end test does the following:
-
-1. Opens a tunnel to a port with nothing on it, and checks that the warning appears.
-2. Starts a server on that port, and checks that the warning clears.
-3. Fetches the public `trycloudflare.com` URL and checks that it reaches the local server.
-4. Stops the tunnel.
+- **Tunnels are saved between launches.** They don't start automatically, and every cloudflared process is stopped when you quit the app.
 
 ## How it works
+
+<p align="center">
+  <img src="./assets/readme/how-it-works.svg" width="100%" alt="Cloudfairy starts cloudflared, which opens an outbound connection to Cloudflare. Visitors open the trycloudflare.com link and Cloudflare forwards their requests through cloudflared to your app. Cloudfairy reads cloudflared's output: the URL makes the link appear, 'Registered tunnel connection' turns the status Live, ERR lines become readable errors, and a port check warns until your server answers.">
+</p>
+
+Cloudfairy runs `cloudflared tunnel --no-autoupdate --url <target>` for each tunnel and reads its
+output line by line. cloudflared only makes outbound connections, so you don't open any ports on
+your router or firewall.
+
+<details>
+<summary><b>Code layout and where files are stored</b></summary>
 
 ```
 ui/ (HTML/CSS/JS) ──invoke──▶ src-tauri/src/main.rs (commands)
@@ -95,14 +88,69 @@ ui/ (HTML/CSS/JS) ──invoke──▶ src-tauri/src/main.rs (commands)
 | `src-tauri/src/settings.rs` | `settings.json` persistence |
 | `src-tauri/src/main.rs` | Tauri commands and app setup; kills all tunnels on exit |
 | `ui/` | The interface. Plain HTML/CSS/JS, no bundler. Follows the system light/dark theme. |
-
-Where files are stored:
+| `site/` | The project website (landing page, `robots.txt`, `sitemap.xml`, social image). [`pages.yml`](.github/workflows/pages.yml) publishes it to GitHub Pages on every push to `main` that changes it. |
 
 | | Settings | Downloaded `cloudflared` |
 |---|---|---|
 | Linux | `~/.config/dev.cloudfairy.desktop/` | `~/.local/share/dev.cloudfairy.desktop/bin/` |
 | macOS | `~/Library/Application Support/dev.cloudfairy.desktop/` | same folder, `bin/` |
 | Windows | `%APPDATA%\dev.cloudfairy.desktop\` | same folder, `bin\` |
+
+</details>
+
+## Build from source
+
+Built with Rust and [Tauri 2](https://v2.tauri.app). You need:
+
+| | Needed |
+|---|---|
+| All | [Rust](https://rustup.rs) (stable) and [Node.js](https://nodejs.org) 18+ (only used to run the Tauri CLI) |
+| Linux | `sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev build-essential` (or your distro's equivalents) |
+| macOS | Xcode Command Line Tools: `xcode-select --install` |
+| Windows | [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) ("Desktop development with C++"). WebView2 is already included in Windows 10/11. |
+
+```bash
+npm install          # installs the Tauri CLI
+npm run dev          # run the app in development mode
+npm run build        # release build + installers in src-tauri/target/release/bundle/
+```
+
+`npm run build` makes installers for the OS you run it on: `.deb`, `.rpm` and `.AppImage` on Linux,
+`.app` and `.dmg` on macOS, `.msi` and NSIS `.exe` on Windows.
+
+<details>
+<summary><b>CI, releases and code signing</b></summary>
+
+Tauri doesn't cross-compile installers, so each one is built on its own OS. GitHub Actions
+does this for you ([`.github/workflows/build.yml`](.github/workflows/build.yml)):
+
+- **Every push to `main` and every pull request:** runs clippy and the unit tests on all three
+  OSes. Then it builds Linux (x64), Windows (x64) and macOS (universal: Apple Silicon + Intel)
+  installers and attaches them to the workflow run as artifacts.
+- **Pushing a version tag** creates a draft GitHub Release with every installer attached:
+
+  ```bash
+  git tag v0.1.0 && git push origin v0.1.0
+  ```
+
+  Keep `version` in `src-tauri/tauri.conf.json` in step with the tag.
+
+For apps you distribute, also set up code signing: Apple notarization on macOS, and a
+signing certificate on Windows so SmartScreen doesn't warn users. See the Tauri distribution docs.
+
+</details>
+
+### Tests
+
+```bash
+cd src-tauri
+cargo test                                         # unit tests: input parsing, log parsing, args
+cargo test -- --ignored quick_tunnel_end_to_end    # real tunnel through Cloudflare (needs network + cloudflared on PATH)
+```
+
+The end-to-end test opens a tunnel to an empty port and checks that the warning appears. Then it
+starts a server on that port and checks that the warning clears. It fetches the public
+`trycloudflare.com` URL to confirm it reaches the local server, and stops the tunnel.
 
 ## Troubleshooting
 
