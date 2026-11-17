@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="530" viewBox="0 0 1200 530" role="img" aria-labelledby="title desc">
+  <title id="title">How Cloudfairy works</title>
+  <desc id="desc">Cloudfairy starts cloudflared, which opens an outbound connection to Cloudflare. Visitors open the trycloudflare.com link and Cloudflare forwards their requests through cloudflared to your app on localhost:3000. Cloudfairy reads cloudflared's output: the URL makes the link appear, "Registered tunnel connection" turns the status Live, and ERR lines become readable errors. It also checks the local port and shows a warning until your server answers.</desc>
+
+  <defs>
+    <linearGradient id="fairy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff9a3c"/>
+      <stop offset="1" stop-color="#e8467c"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="530" rx="24" fill="#141312"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, sans-serif">
+
+    <!-- Row 1: the path a request takes -->
+    <g id="path">
+      <g transform="translate(56 56)">
+        <rect width="240" height="104" rx="14" fill="#1d1c1a" stroke="#3a3633" stroke-width="1.5"/>
+        <text x="24" y="44" font-size="22" font-weight="650" fill="#f1eeea">Your app</text>
+        <text x="24" y="76" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="19" fill="#a39d95">localhost:3000</text>
+      </g>
+
+      <g transform="translate(344 56)">
+        <rect width="240" height="104" rx="14" fill="#1d1c1a" stroke="url(#fairy)" stroke-width="2.5"/>
+        <text x="24" y="44" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="22" font-weight="600" fill="#f1eeea">cloudflared</text>
+        <text x="24" y="76" font-size="19" fill="#a39d95">started by Cloudfairy</text>
+      </g>
+
+      <g transform="translate(632 56)">
+        <rect width="240" height="104" rx="14" fill="#1d1c1a" stroke="#3a3633" stroke-width="1.5"/>
+        <text x="24" y="44" font-size="22" font-weight="650" fill="#f1eeea">Cloudflare</text>
+        <text x="24" y="76" font-size="19" fill="#a39d95">edge network</text>
+      </g>
+
+      <g transform="translate(920 56)">
+        <rect width="224" height="104" rx="14" fill="#1d1c1a" stroke="#2c6e47" stroke-width="1.5"/>
+        <circle cx="32" cy="37" r="6" fill="#3ccf7a"/>
+        <text x="48" y="44" font-size="22" font-weight="650" fill="#f1eeea">Anyone</text>
+        <text x="24" y="76" font-size="19" fill="#a39d95">with the link</text>
+      </g>
+
+      <!-- connectors: traffic flows both ways -->
+      <g stroke="#6b665f" stroke-width="2.5" stroke-linecap="round">
+        <path d="M304 108h32"/>
+        <path d="M592 108h32"/>
+        <path d="M880 108h32"/>
+      </g>
+      <g fill="#a39d95">
+        <circle cx="304" cy="108" r="4"/><circle cx="336" cy="108" r="4"/>
+        <circle cx="592" cy="108" r="4"/><circle cx="624" cy="108" r="4"/>
+        <circle cx="880" cy="108" r="4"/><circle cx="912" cy="108" r="4"/>
+      </g>
+
+      <text x="608" y="198" font-size="18" fill="#a39d95" text-anchor="middle">outbound connection, no open ports or account</text>
+      <text x="1032" y="198" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" fill="#a39d95" text-anchor="middle">….trycloudflare.com</text>
+    </g>
+
+    <!-- dashed tap from cloudflared down to the watcher panel -->
+    <path d="M380 160v74" stroke="#e8467c" stroke-width="2.5" stroke-dasharray="6 6" fill="none"/>
+
+    <!-- Row 2: what Cloudfairy reads from cloudflared -->
+    <g id="watcher" transform="translate(56 234)">
+      <rect width="1088" height="250" rx="16" fill="#1b1918" stroke="#3a3633" stroke-width="1.5"/>
+      <text x="32" y="44" font-size="20" font-weight="650" fill="#f1eeea">Cloudfairy watches cloudflared and your port, and keeps the tunnel's card current</text>
+
+      <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">
+        <text x="32" y="94" fill="#d8d3cc">https://….trycloudflare.com</text>
+        <text x="32" y="136" fill="#d8d3cc">Registered tunnel connection</text>
+        <text x="32" y="178" fill="#ff8b8b">ERR …</text>
+        <text x="32" y="220" fill="#f0b75a">nothing on localhost:3000</text>
+      </g>
+
+      <g stroke="url(#fairy)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <path d="M420 87h56m-12-10 12 10-12 10"/>
+        <path d="M420 129h56m-12-10 12 10-12 10"/>
+        <path d="M420 171h56m-12-10 12 10-12 10"/>
+        <path d="M420 213h56m-12-10 12 10-12 10"/>
+      </g>
+
+      <g font-size="20" fill="#f1eeea">
+        <text x="500" y="94">the link appears, with Copy / Open / QR</text>
+        <text x="500" y="136"><tspan fill="#3ccf7a">●</tspan> status turns Live</text>
+        <text x="500" y="178">a readable error shows on the card</text>
+        <text x="500" y="220">a warning, cleared once your server starts</text>
+      </g>
+    </g>
+  </g>
+</svg>
