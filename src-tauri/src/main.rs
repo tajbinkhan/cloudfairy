@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app_update;
+mod child_guard;
 mod cloudflared;
 mod settings;
 mod tunnel;
@@ -212,11 +213,22 @@ fn qr_svg(text: String) -> CmdResult<String> {
 
 fn main() {
     let app = tauri::Builder::default()
+        // Must be first. A second copy would keep its own list of tunnels and overwrite
+        // settings.json, so it exits and brings this window to the front instead.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PendingUpdate::default())
         .setup(|app| {
+            // Kills cloudflared left running by a session that crashed.
+            child_guard::init(&app.path().app_data_dir()?);
             let config_dir = app.path().app_config_dir()?;
             app.manage(AppState {
                 settings: SettingsStore::load(config_dir.join("settings.json")),

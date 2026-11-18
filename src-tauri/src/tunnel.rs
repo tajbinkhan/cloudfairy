@@ -1,7 +1,7 @@
 //! Runs `cloudflared tunnel --url …` processes and turns their log output into state.
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     path::Path,
     process::Stdio,
     sync::{
@@ -18,7 +18,7 @@ use tokio::{
     process::{Child, Command},
 };
 
-use crate::settings::TunnelConfig;
+use crate::{child_guard, settings::TunnelConfig};
 
 const MAX_LOG_LINES: usize = 1000;
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -74,12 +74,22 @@ struct Runtime {
     view: RuntimeView,
     logs: VecDeque<String>,
     child: Option<Child>,
+    /// PID of `child`, kept because tokio forgets it once the process has been reaped.
+    pid: Option<u32>,
+    /// Set while cloudflared is being spawned, so a second Start can't launch another copy.
+    launching: bool,
+    /// cloudflared's `connIndex` of each connection to Cloudflare that is up right now.
+    conns: HashSet<u32>,
     /// Identifies one launch, so output from an old process can't touch a newer one.
     run_id: u64,
     stopping: bool,
 }
 
 impl Runtime {
+    fn active(&self) -> bool {
+        self.launching || self.child.is_some()
+    }
+
     fn log(&mut self, line: String) {
         if self.logs.len() >= MAX_LOG_LINES {
             self.logs.pop_front();
@@ -121,11 +131,11 @@ impl Tunnels {
     }
 
     pub fn is_active(&self, id: &str) -> bool {
-        self.map().get(id).is_some_and(|r| r.child.is_some())
+        self.map().get(id).is_some_and(Runtime::active)
     }
 
     pub fn any_active(&self) -> bool {
-        self.map().values().any(|r| r.child.is_some())
+        self.map().values().any(Runtime::active)
     }
 
     pub async fn start<R: TauriRuntime>(
@@ -135,12 +145,31 @@ impl Tunnels {
         bin: &Path,
         protocol: &str,
     ) -> Result<(), String> {
-        if self.is_active(&cfg.id) {
-            return Err("This tunnel is already running.".into());
-        }
-
-        let warning = probe_local(&cfg.target).await;
         let args = build_args(&cfg.target, protocol);
+        let command_line = format!("{} {}", bin.display(), args.join(" "));
+
+        // Claim the tunnel before the first await, so two quick clicks can't both launch it.
+        let run_id = {
+            let mut map = self.map();
+            let rt = map.entry(cfg.id.clone()).or_default();
+            if rt.active() {
+                return Err("This tunnel is already running.".into());
+            }
+            let run_id = self.inner.next_run.fetch_add(1, Ordering::Relaxed) + 1;
+            rt.view = RuntimeView {
+                status: Status::Starting,
+                started_at: Some(now_ms()),
+                ..Default::default()
+            };
+            rt.launching = true;
+            rt.run_id = run_id;
+            rt.stopping = false;
+            rt.conns.clear();
+            rt.logs.clear();
+            rt.log(format!("$ {command_line}"));
+            emit_update(app, &cfg.id, &rt.view);
+            run_id
+        };
 
         let mut cmd = Command::new(bin);
         cmd.args(&args)
@@ -149,36 +178,42 @@ impl Tunnels {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         hide_console(&mut cmd);
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("Couldn't launch cloudflared at {}: {e}", bin.display()))?;
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
-        let run_id = self.inner.next_run.fetch_add(1, Ordering::Relaxed) + 1;
+        let spawned = child_guard::spawn(cmd, command_line).await;
 
-        {
+        let (stdout, stderr) = {
             let mut map = self.map();
-            let rt = map.entry(cfg.id.clone()).or_default();
-            if rt.child.is_some() {
-                // Started twice at the same moment; `child` is killed when dropped here.
-                return Err("This tunnel is already running.".into());
-            }
-            rt.view = RuntimeView {
-                status: Status::Starting,
-                started_at: Some(now_ms()),
-                warning: warning.clone(),
-                ..Default::default()
+            // Removed, or stopped and started again, while it was launching: dropping
+            // `spawned` kills the process.
+            let Some(rt) = map.get_mut(&cfg.id).filter(|rt| rt.run_id == run_id) else {
+                if let Ok(child) = &spawned {
+                    child_guard::exited(child.id());
+                }
+                return Err("The tunnel was removed while it was starting.".into());
             };
-            rt.child = Some(child);
-            rt.run_id = run_id;
-            rt.stopping = false;
-            rt.logs.clear();
-            rt.log(format!("$ {} {}", bin.display(), args.join(" ")));
-            if let Some(w) = warning {
-                rt.log(format!("[cloudfairy] {w}"));
+            rt.launching = false;
+            let mut child = match spawned {
+                Ok(child) => child,
+                Err(e) => {
+                    let msg = format!("Couldn't launch cloudflared at {}: {e}", bin.display());
+                    rt.view = RuntimeView {
+                        status: Status::Error,
+                        error: Some(msg.clone()),
+                        ..Default::default()
+                    };
+                    rt.log(format!("[cloudfairy] {msg}"));
+                    emit_update(app, &cfg.id, &rt.view);
+                    return Err(msg);
+                }
+            };
+            if rt.stopping {
+                // Stop was pressed while it was launching; `watch` finishes the cleanup.
+                let _ = child.start_kill();
             }
-            emit_update(app, &cfg.id, &rt.view);
-        }
+            rt.pid = child.id();
+            let streams = (child.stdout.take(), child.stderr.take());
+            rt.child = Some(child);
+            streams
+        };
 
         if let Some(out) = stdout {
             tauri::async_runtime::spawn(self.clone().pump(app.clone(), cfg.id.clone(), run_id, out));
@@ -192,17 +227,27 @@ impl Tunnels {
             cfg.target.clone(),
             run_id,
         ));
+
+        if let Some(warning) = probe_local(&cfg.target).await {
+            let mut map = self.map();
+            if let Some(rt) = map.get_mut(&cfg.id).filter(|rt| rt.run_id == run_id && !rt.stopping) {
+                rt.view.warning = Some(warning.clone());
+                rt.log(format!("[cloudfairy] {warning}"));
+                emit_update(app, &cfg.id, &rt.view);
+            }
+        }
         Ok(())
     }
 
     pub fn stop(&self, id: &str) {
         let mut map = self.map();
-        if let Some(rt) = map.get_mut(id) {
+        if let Some(rt) = map.get_mut(id).filter(|rt| rt.active()) {
+            rt.stopping = true;
+            // While it's still launching, `start` kills it as soon as the process exists.
             if let Some(child) = rt.child.as_mut() {
-                rt.stopping = true;
                 let _ = child.start_kill();
-                rt.log("[cloudfairy] Stopping…".into());
             }
+            rt.log("[cloudfairy] Stopping…".into());
         }
     }
 
@@ -210,6 +255,7 @@ impl Tunnels {
         if let Some(mut rt) = self.map().remove(id) {
             if let Some(mut child) = rt.child.take() {
                 let _ = child.start_kill();
+                child_guard::exited(rt.pid);
             }
         }
     }
@@ -217,11 +263,12 @@ impl Tunnels {
     /// Called when the app exits so no cloudflared process is left behind.
     pub fn kill_all(&self) {
         for rt in self.map().values_mut() {
+            rt.stopping = true;
             if let Some(child) = rt.child.as_mut() {
-                rt.stopping = true;
                 let _ = child.start_kill();
             }
         }
+        child_guard::all_stopped();
     }
 
     async fn pump<R: TauriRuntime, Rd>(self, app: AppHandle<R>, id: String, run_id: u64, reader: Rd)
@@ -249,15 +296,29 @@ impl Tunnels {
                 changed = true;
             }
         }
+        // cloudflared keeps up to four connections, numbered by connIndex. One drop can log both
+        // "Connection terminated" and "Unregistered", so track the set rather than a counter.
+        let index = conn_index(&line);
         if line.contains("Registered tunnel connection") {
-            view.connections += 1;
+            let fallback = u32::MAX - rt.conns.len() as u32;
+            rt.conns.insert(index.unwrap_or(fallback));
             view.status = Status::Running;
             view.error = None;
             changed = true;
         } else if line.contains("Unregistered tunnel connection") || line.contains("Connection terminated") {
-            view.connections = view.connections.saturating_sub(1);
+            match index {
+                Some(i) => {
+                    rt.conns.remove(&i);
+                }
+                None => {
+                    if let Some(&any) = rt.conns.iter().next() {
+                        rt.conns.remove(&any);
+                    }
+                }
+            }
             changed = true;
         }
+        view.connections = rt.conns.len() as u32;
         if line.contains("Unable to reach the origin service") {
             view.warning = Some(
                 "Cloudflare reached your computer, but nothing answered at the local address. \
@@ -319,6 +380,8 @@ impl Tunnels {
             return;
         }
         rt.child = None;
+        child_guard::exited(rt.pid.take());
+        rt.conns.clear();
         let view = &mut rt.view;
         view.connections = 0;
         view.public_url = None;
@@ -457,6 +520,13 @@ fn find_quick_url(line: &str) -> Option<String> {
     None
 }
 
+/// Reads `connIndex=2` from a cloudflared log line.
+fn conn_index(line: &str) -> Option<u32> {
+    let rest = &line[line.find("connIndex=")? + "connIndex=".len()..];
+    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    rest[..end].parse().ok()
+}
+
 /// Extracts the message from a cloudflared `ERR` log line.
 fn error_message(line: &str) -> Option<String> {
     let (_, msg) = line.split_once(" ERR ")?;
@@ -507,6 +577,45 @@ mod tests {
             Some("no more connections active and exiting")
         );
         assert_eq!(error_message("2026-11-17T09:32:34Z INF Tunnel server stopped"), None);
+    }
+
+    #[test]
+    fn reads_conn_index() {
+        assert_eq!(conn_index("INF Registered tunnel connection connIndex=2 connection=abc"), Some(2));
+        assert_eq!(conn_index("ERR Connection terminated error=x connIndex=13"), Some(13));
+        assert_eq!(conn_index("INF Starting tunnel"), None);
+    }
+
+    #[test]
+    fn counts_connections_by_index() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let tunnels = Tunnels::default();
+        tunnels.map().insert(
+            "t".into(),
+            Runtime {
+                run_id: 1,
+                ..Default::default()
+            },
+        );
+        let feed = |line: &str| tunnels.handle_line(&handle, "t", 1, line.into());
+        let view = || tunnels.map()["t"].view.clone();
+
+        feed("INF Registered tunnel connection connIndex=0 connection=a");
+        feed("INF Registered tunnel connection connIndex=1 connection=b");
+        assert_eq!((view().status, view().connections), (Status::Running, 2));
+
+        // One drop logs two lines; it must only count once.
+        feed("ERR Connection terminated error=\"timeout\" connIndex=0");
+        feed("INF Unregistered tunnel connection connIndex=0 event=0");
+        assert_eq!(view().connections, 1);
+
+        feed("INF Unregistered tunnel connection connIndex=1 event=0");
+        assert_eq!((view().status, view().connections), (Status::Running, 0));
+        assert!(view().error.is_none(), "drops while running aren't shown as a failure");
+
+        feed("INF Registered tunnel connection connIndex=1 connection=c");
+        assert_eq!(view().connections, 1);
     }
 
     #[test]

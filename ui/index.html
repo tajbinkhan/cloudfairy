@@ -59,7 +59,9 @@
       <p id="composer-error" class="form-error" role="alert"></p>
     </form>
 
-    <section id="list" class="list" aria-live="polite"></section>
+    <section id="list" class="list"></section>
+    <!-- Status changes are announced from here; the cards themselves update every second. -->
+    <div id="announcer" class="sr-only" aria-live="polite"></div>
 
     <section id="empty" class="empty" hidden>
       <div class="empty-art" aria-hidden="true"></div>
