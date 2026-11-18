@@ -2,3 +2,7 @@ node_modules/
 src-tauri/target/
 src-tauri/gen/schemas/
 .DS_Store
+
+# graphify: machine-specific paths (local Python and project root)
+graphify-out/.graphify_python
+graphify-out/.graphify_root
