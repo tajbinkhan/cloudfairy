@@ -1,6 +1,6 @@
 [package]
 name = "cloudfairy"
-version = "0.1.1"
+version = "0.1.2"
 description = "Desktop app (GUI) for Cloudflare quick tunnels: share localhost with a public trycloudflare.com link"
 authors = ["Tajbin Khan"]
 homepage = "https://tajbinkhan.github.io/cloudfairy/"
