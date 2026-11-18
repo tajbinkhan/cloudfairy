@@ -25,6 +25,8 @@ const ICON = {
 const tunnels = new Map();
 /** ids of cards whose log panel is open */
 const openLogs = new Set();
+/** ids whose start_tunnel call hasn't returned yet */
+const startPending = new Set();
 let cfInfo = null;
 let downloading = false;
 let latestVersion = null;
@@ -62,8 +64,15 @@ function formatUptime(startedAt) {
   return `${h}h ${m % 60}m`;
 }
 
+// "reconnecting" is UI-only: cloudflared is running but has no live connection to Cloudflare.
+function visualStatus(t) {
+  return t.status === "running" && !t.connections ? "reconnecting" : t.status;
+}
+
 function statusText(t) {
-  switch (t.status) {
+  switch (visualStatus(t)) {
+    case "reconnecting":
+      return "Reconnecting…";
     case "running": {
       const conns = t.connections > 1 ? ` · ${t.connections} connections` : "";
       return `Live · ${formatUptime(t.startedAt)}${conns}`;
@@ -136,7 +145,7 @@ function renderCard(t) {
     $("#list").prepend(el);
   }
   const active = t.status === "starting" || t.status === "running";
-  el.dataset.status = t.status;
+  el.dataset.status = visualStatus(t);
   $(".card-name", el).textContent = t.name;
   $(".card-target", el).textContent = t.target;
   $(".status-text", el).textContent = statusText(t);
@@ -144,6 +153,8 @@ function renderCard(t) {
   const toggle = $(".toggle", el);
   toggle.innerHTML = active ? `${ICON.stop}<span>Stop</span>` : `${ICON.play}<span>${t.status === "error" ? "Retry" : "Start"}</span>`;
   toggle.classList.toggle("primary", !active);
+  // A second Start while the first is still launching would spawn cloudflared twice.
+  toggle.disabled = startPending.has(t.id);
 
   const link = $(".public-url", el);
   const placeholder = $(".url-placeholder", el);
@@ -208,12 +219,20 @@ function appendLog(id, line) {
 
 async function startTunnel(id) {
   const t = tunnels.get(id);
+  if (!t || startPending.has(id)) return;
+  startPending.add(id);
+  renderCard(t);
   try {
     const view = await invoke("start_tunnel", { id });
     // Events may already have moved the tunnel further along; don't overwrite with an older snapshot.
-    if (tunnels.get(id)?.status === "stopped" || tunnels.get(id)?.status === "error") Object.assign(t, view);
+    if (t.status === "stopped" || t.status === "error") Object.assign(t, view);
   } catch (e) {
-    Object.assign(t, { status: "error", error: errText(e), publicUrl: null });
+    // If events say it's already starting or running, the error doesn't describe its state.
+    if (t.status !== "starting" && t.status !== "running") {
+      Object.assign(t, { status: "error", error: errText(e), publicUrl: null });
+    }
+  } finally {
+    startPending.delete(id);
   }
   renderCard(t);
   if (!cfInfo?.path) refreshCloudflared();
@@ -289,6 +308,25 @@ async function onCardClick(ev) {
       removeTunnel(id, target);
       break;
   }
+}
+
+// Tells screen readers about status changes. The cards aren't a live region because the
+// uptime in them changes every second.
+function announceChange(before, t) {
+  const was = visualStatus(before);
+  const now = visualStatus(t);
+  let message = null;
+  if (now !== was) {
+    message = {
+      running: t.publicUrl ? `${t.name} is live at ${t.publicUrl}` : `${t.name} is live`,
+      reconnecting: `${t.name} lost its connection to Cloudflare and is reconnecting`,
+      error: `${t.name} failed${t.error ? `: ${t.error}` : ""}`,
+      stopped: `${t.name} stopped`,
+    }[now] ?? null;
+  } else if (t.publicUrl && !before.publicUrl) {
+    message = `${t.name} has a public link: ${t.publicUrl}`;
+  }
+  if (message) $("#announcer").textContent = message;
 }
 
 // ---------------------------------------------------------------- composer
@@ -535,8 +573,10 @@ async function init() {
   await listen("tunnel-update", ({ payload }) => {
     const t = tunnels.get(payload.id);
     if (!t) return;
+    const before = { ...t };
     Object.assign(t, payload);
     renderCard(t);
+    announceChange(before, t);
   });
   await listen("tunnel-log", ({ payload }) => appendLog(payload.id, payload.line));
   await listen("download-progress", ({ payload }) => showProgress(payload));

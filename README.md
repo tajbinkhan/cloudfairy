@@ -79,13 +79,14 @@ ui/ (HTML/CSS/JS) ──invoke──▶ src-tauri/src/main.rs (commands)
                tunnel-log              • URL in the banner box         → publicUrl
                download-progress       • "Registered tunnel connection" → status "running"
                                        • "ERR …"                        → error message
-                                     polls the child process for exit → "stopped" / "error"
+               app-update-progress   polls the child process for exit → "stopped" / "error"
 ```
 
 | File | Purpose |
 |---|---|
 | `src-tauri/src/tunnel.rs` | Process lifecycle, log parsing, local-port check, input normalization |
 | `src-tauri/src/cloudflared.rs` | Finding the binary, reading its version, downloading from GitHub releases (`.tgz` on macOS) |
+| `src-tauri/src/app_update.rs` | Updating Cloudfairy itself: checking the latest GitHub release, downloading and verifying the signed update |
 | `src-tauri/src/settings.rs` | `settings.json` persistence |
 | `src-tauri/src/main.rs` | Tauri commands and app setup; kills all tunnels on exit |
 | `ui/` | The interface. Plain HTML/CSS/JS, no bundler. Follows the system light/dark theme. |
