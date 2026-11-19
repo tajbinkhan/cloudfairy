@@ -284,6 +284,58 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .logs .wrn { color: #f0c36a; }
 .logs .app { color: #8fc7ff; }
 
+/* ---------- request list ---------- */
+.requests {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.requests-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.requests-note { flex: 1; color: var(--muted); font-size: 12px; }
+.requests-empty { padding: 14px 12px; color: var(--muted); font-size: 13px; }
+.req-list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow: auto; }
+.req-list li + li { border-top: 1px solid var(--border); }
+.req-row {
+  display: grid;
+  grid-template-columns: 64px 58px minmax(0, 1fr) 44px 56px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.req-row:hover, .req-row[aria-expanded="true"] { background: var(--surface-2); }
+.req-row:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+.req-time, .req-dur { color: var(--muted); font-variant-numeric: tabular-nums; }
+.req-dur { text-align: right; }
+.req-method { font-family: var(--mono); font-size: 11.5px; font-weight: 600; }
+.req-path { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.req-status { font-family: var(--mono); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.req-status.s-ok { color: var(--ok); }
+.req-status.s-redirect, .req-status.s-wait { color: var(--muted); }
+.req-status.s-warn { color: var(--warn); }
+.req-status.s-err { color: var(--err); }
+.req-status.guess { text-decoration: underline dotted; text-underline-offset: 3px; }
+.req-detail { padding: 4px 12px 12px; background: var(--surface-2); font-size: 12px; }
+.req-detail h4 { margin: 10px 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.req-detail dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 14px; margin: 0; }
+.req-detail dt { color: var(--muted); }
+.req-detail dd { margin: 0; word-break: break-all; }
+.req-headers dt, .req-headers dd { font-family: var(--mono); font-size: 11.5px; }
+
 /* ---------- empty state ---------- */
 .empty { text-align: center; padding: 48px 24px; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .empty h2 { color: var(--text); font-size: 17px; }

@@ -18,7 +18,11 @@ use tokio::{
     process::{Child, Command},
 };
 
-use crate::{child_guard, settings::TunnelConfig};
+use crate::{
+    child_guard,
+    requests::{RequestEntry, RequestLog},
+    settings::TunnelConfig,
+};
 
 const MAX_LOG_LINES: usize = 1000;
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -27,6 +31,7 @@ const METRICS_TICKS: u32 = 8;
 
 pub const EVENT_UPDATE: &str = "tunnel-update";
 pub const EVENT_LOG: &str = "tunnel-log";
+pub const EVENT_REQUEST: &str = "tunnel-request";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -88,10 +93,18 @@ struct LogEvent<'a> {
     line: &'a str,
 }
 
+#[derive(Clone, Serialize)]
+struct RequestEvent<'a> {
+    id: &'a str,
+    entry: &'a RequestEntry,
+}
+
 #[derive(Default)]
 struct Runtime {
     view: RuntimeView,
     logs: VecDeque<String>,
+    /// Requests read from cloudflared's debug output.
+    requests: RequestLog,
     child: Option<Child>,
     /// PID of `child`, kept because tokio forgets it once the process has been reaped.
     pid: Option<u32>,
@@ -195,6 +208,16 @@ impl Tunnels {
             .unwrap_or_default()
     }
 
+    pub fn requests(&self, id: &str) -> Vec<RequestEntry> {
+        self.map().get(id).map(|r| r.requests.entries()).unwrap_or_default()
+    }
+
+    pub fn clear_requests(&self, id: &str) {
+        if let Some(rt) = self.map().get_mut(id) {
+            rt.requests.clear();
+        }
+    }
+
     pub fn is_active(&self, id: &str) -> bool {
         self.map().get(id).is_some_and(Runtime::active)
     }
@@ -234,6 +257,7 @@ impl Tunnels {
             rt.fail_announced = false;
             rt.conns.clear();
             rt.logs.clear();
+            rt.requests.clear();
             rt.log(format!("$ {command_line}"));
             if let Some(host) = cfg.rewrite_host.then(|| host_header(&cfg.target)).flatten() {
                 rt.log(format!(
@@ -359,6 +383,15 @@ impl Tunnels {
         let mut map = self.map();
         let Some(rt) = map.get_mut(id) else { return };
         if rt.run_id != run_id {
+            return;
+        }
+
+        if let Some(entry) = rt.requests.handle_line(&line, now_ms()) {
+            let _ = app.emit(EVENT_REQUEST, RequestEvent { id, entry: &entry });
+        }
+        // Debug lines are only read for requests. They're left out of the log view because
+        // they're noisy and carry visitors' headers, cookies included.
+        if line.split(' ').nth(1) == Some("DBG") {
             return;
         }
 
@@ -492,6 +525,7 @@ impl Tunnels {
         }
         rt.log(format!("[cloudfairy] cloudflared exited ({description})"));
         rt.metrics = None;
+        rt.requests.end_run();
         self.emit(&app, &id, rt);
     }
 }
@@ -560,11 +594,14 @@ pub fn hide_console(_cmd: &mut Command) {}
 
 fn build_args(target: &str, protocol: &str, rewrite_host: bool) -> Vec<String> {
     // Port 0 lets cloudflared pick a free port, which it then logs (see `metrics_addr`).
+    // Debug level adds a line per request and per response, which feed the request list.
     let mut args: Vec<String> = vec![
         "tunnel".into(),
         "--no-autoupdate".into(),
         "--metrics".into(),
         "127.0.0.1:0".into(),
+        "--loglevel".into(),
+        "debug".into(),
     ];
     if matches!(protocol, "quic" | "http2") {
         args.push("--protocol".into());
@@ -779,15 +816,15 @@ mod tests {
     fn builds_args() {
         assert_eq!(
             build_args("https://localhost:8443", "http2", false),
-            ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:0", "--protocol", "http2", "--no-tls-verify", "--url", "https://localhost:8443"]
+            ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:0", "--loglevel", "debug", "--protocol", "http2", "--no-tls-verify", "--url", "https://localhost:8443"]
         );
         assert_eq!(
             build_args("http://localhost:3000", "auto", false),
-            ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:0", "--url", "http://localhost:3000"]
+            ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:0", "--loglevel", "debug", "--url", "http://localhost:3000"]
         );
         assert_eq!(
             build_args("http://localhost:5173/app", "auto", true),
-            ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:0", "--http-host-header", "localhost:5173", "--url", "http://localhost:5173/app"]
+            ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:0", "--loglevel", "debug", "--http-host-header", "localhost:5173", "--url", "http://localhost:5173/app"]
         );
     }
 
@@ -894,6 +931,13 @@ mod tests {
 
             let view = wait_for(&tunnels, &cfg, 10, |v| v.requests >= 1).await;
             assert_eq!(view.request_errors, 0, "the request is counted from cloudflared's metrics");
+            let entries = tunnels.requests(&cfg.id);
+            let ok = entries.iter().find(|e| e.url == format!("{url}/") && e.status == Some(200));
+            assert!(ok.is_some_and(|e| e.method == "GET"), "the request is listed from the debug log: {entries:?}");
+            assert!(
+                tunnels.logs(&cfg.id).iter().all(|l| !l.contains(" DBG ")),
+                "debug lines stay out of the log view"
+            );
             let live = changes.lock().unwrap().iter().filter(|c| matches!(c, Change::Live { .. })).count();
             assert_eq!(live, 1, "the listener hears about going live once");
 

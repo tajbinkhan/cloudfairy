@@ -53,6 +53,10 @@ You don't need to install `cloudflared` first. If Cloudfairy can't find it, one 
 - **Checks your local server.** If nothing is listening on the port, a warning appears. It clears by itself once your server starts.
 - **Readable errors.** Rate limits, crashes and a missing binary show up on the tunnel's card.
 - **Live cloudflared logs** for each tunnel, with errors and warnings highlighted.
+- **Request list** for each tunnel: time, method, path, status and duration of every request
+  through the link. Click one to see the visitor's IP, country, user agent and request headers.
+  `Authorization`, `Cookie` and other credential headers are hidden. The list lives in memory
+  and keeps the last 500 requests.
 - **Finds or downloads cloudflared.** It checks your Settings path first, then a copy it downloaded, then your `PATH` and the usual install locations (Homebrew, winget, Program Files).
 - **Host header rewrite** per tunnel, for dev servers that reject unknown hostnames (Vite, webpack-dev-server). Turn it on under Edit.
 - **Runs in the tray.** Close the window while tunnels are running and they keep running. The tray menu copies or opens each link, starts and stops tunnels, and quits.
@@ -68,10 +72,16 @@ You don't need to install `cloudflared` first. If Cloudfairy can't find it, one 
   <img src="./assets/readme/how-it-works.svg" width="100%" alt="Cloudfairy starts cloudflared, which opens an outbound connection to Cloudflare. Visitors open the trycloudflare.com link and Cloudflare forwards their requests through cloudflared to your app. Cloudfairy reads cloudflared's output: the URL makes the link appear, 'Registered tunnel connection' turns the status Live, ERR lines become readable errors, and a port check warns until your server answers.">
 </p>
 
-Cloudfairy runs `cloudflared tunnel --no-autoupdate --metrics 127.0.0.1:0 --url <target>` for each
-tunnel and reads its output line by line. Every two seconds it reads the request counts from
-cloudflared's metrics server, which only listens on `127.0.0.1`. cloudflared only makes outbound
-connections, so you don't open any ports on your router or firewall.
+Cloudfairy runs `cloudflared tunnel --no-autoupdate --metrics 127.0.0.1:0 --loglevel debug --url <target>`
+for each tunnel and reads its output line by line. Every two seconds it reads the request counts
+from cloudflared's metrics server, which only listens on `127.0.0.1`. cloudflared only makes
+outbound connections, so you don't open any ports on your router or firewall.
+
+At debug level cloudflared logs one line for each request and one for each response, and
+Cloudfairy builds the request list from them. These lines stay out of the Logs view. The response
+line doesn't say which request it answers, so Cloudfairy pairs it with the oldest unanswered
+request on the same connection. When several requests on one connection overlap, that pairing is
+a guess, and the status shows with a `?`.
 
 <details>
 <summary><b>Code layout and where files are stored</b></summary>
