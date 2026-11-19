@@ -21,7 +21,8 @@ const ICON = {
   trash: svg('<path d="M3 6h18"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>'),
 };
 
-/** id -> tunnel view from the backend ({id, name, target, status, publicUrl, error, warning, startedAt, connections}) */
+/** id -> tunnel view from the backend ({id, name, target, rewriteHost, startOnOpen, status, publicUrl,
+ * error, warning, startedAt, connections, requests, requestErrors}) */
 const tunnels = new Map();
 /** ids of cards whose log panel is open */
 const openLogs = new Set();
@@ -126,6 +127,7 @@ function cardTemplate(t) {
     <p class="notice error" hidden></p>
     <div class="card-foot">
       <button class="btn ghost small" type="button" data-action="logs" aria-expanded="false">${ICON.chevron}<span>Logs</span></button>
+      <span class="card-stats" hidden></span>
       <span class="spacer"></span>
       <button class="btn ghost small" type="button" data-action="edit">${ICON.edit}<span>Edit</span></button>
       <button class="btn ghost small" type="button" data-action="remove">${ICON.trash}<span>Remove</span></button>
@@ -147,7 +149,10 @@ function renderCard(t) {
   const active = t.status === "starting" || t.status === "running";
   el.dataset.status = visualStatus(t);
   $(".card-name", el).textContent = t.name;
-  $(".card-target", el).textContent = t.rewriteHost ? `${t.target} · Host rewritten` : t.target;
+  const tags = [t.target];
+  if (t.startOnOpen) tags.push("Starts with Cloudfairy");
+  if (t.rewriteHost) tags.push("Host rewritten");
+  $(".card-target", el).textContent = tags.join(" · ");
   $(".status-text", el).textContent = statusText(t);
 
   const toggle = $(".toggle", el);
@@ -173,12 +178,42 @@ function renderCard(t) {
   error.hidden = !t.error || t.status === "running";
   error.textContent = t.error ?? "";
 
+  renderStats(t, el);
   $('[data-action="edit"]', el).disabled = active;
   updateEmpty();
 }
 
+const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+
+function renderStats(t, el) {
+  const stats = $(".card-stats", el);
+  stats.hidden = t.status !== "running";
+  if (stats.hidden) return;
+  const requests = t.requests ?? 0;
+  const failed = t.requestErrors ?? 0;
+  stats.innerHTML = requests
+    ? escapeHtml(plural(requests, "request")) + (failed ? ` · <span class="failed">${escapeHtml(failed.toLocaleString())} failed</span>` : "")
+    : "No requests yet";
+}
+
+const isActive = (t) => t.status === "starting" || t.status === "running";
+
 function updateEmpty() {
   $("#empty").hidden = tunnels.size > 0;
+  const all = [...tunnels.values()];
+  $("#list-actions").hidden = all.length < 2;
+  $("#start-all").disabled = !all.some((t) => !isActive(t) && !startPending.has(t.id));
+  $("#stop-all").disabled = !all.some(isActive);
+}
+
+function startAll() {
+  for (const t of tunnels.values()) if (!isActive(t)) startTunnel(t.id);
+}
+
+async function stopAll() {
+  for (const t of tunnels.values()) {
+    if (isActive(t)) await invoke("stop_tunnel", { id: t.id }).catch((e) => toast(errText(e)));
+  }
 }
 
 function tickUptime() {
@@ -360,6 +395,7 @@ function openEdit(t) {
   $("#edit-name").value = t.name;
   $("#edit-target").value = t.target;
   $("#edit-rewrite-host").checked = Boolean(t.rewriteHost);
+  $("#edit-start-on-open").checked = Boolean(t.startOnOpen);
   $("#edit-error").textContent = "";
   $("#edit-dialog").showModal();
 }
@@ -371,6 +407,7 @@ async function saveEdit() {
       name: $("#edit-name").value,
       target: $("#edit-target").value,
       rewriteHost: $("#edit-rewrite-host").checked,
+      startOnOpen: $("#edit-start-on-open").checked,
     });
     Object.assign(tunnels.get(view.id), view);
     renderCard(tunnels.get(view.id));
@@ -528,6 +565,11 @@ async function openSettings() {
   const s = await invoke("get_settings");
   $("#cf-custom").value = s.cloudflaredPath ?? "";
   $("#protocol").value = s.protocol || "auto";
+  $("#close-to-tray").checked = s.closeToTray;
+  $("#close-to-tray-row").hidden = !s.trayAvailable;
+  $("#launch-at-login").checked = s.launchAtLogin;
+  $("#notify").checked = s.notify;
+  $("#copy-on-live").checked = s.copyOnLive;
   $("#settings-error").textContent = "";
   $("#settings-dialog").showModal();
   refreshCloudflared();
@@ -536,8 +578,14 @@ async function openSettings() {
 async function saveSettings() {
   try {
     await invoke("save_settings", {
-      cloudflaredPath: $("#cf-custom").value,
-      protocol: $("#protocol").value,
+      input: {
+        cloudflaredPath: $("#cf-custom").value,
+        protocol: $("#protocol").value,
+        closeToTray: $("#close-to-tray").checked,
+        launchAtLogin: $("#launch-at-login").checked,
+        notify: $("#notify").checked,
+        copyOnLive: $("#copy-on-live").checked,
+      },
     });
     await refreshCloudflared();
     if (cfInfo.problem && $("#cf-custom").value.trim()) {
@@ -570,6 +618,8 @@ async function init() {
     }
   });
   $("#composer").addEventListener("submit", onCreate);
+  $("#start-all").addEventListener("click", startAll);
+  $("#stop-all").addEventListener("click", stopAll);
   $("#list").addEventListener("click", onCardClick);
 
   await listen("tunnel-update", ({ payload }) => {

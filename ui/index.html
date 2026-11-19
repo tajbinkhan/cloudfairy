@@ -59,6 +59,10 @@
       <p id="composer-error" class="form-error" role="alert"></p>
     </form>
 
+    <div id="list-actions" class="list-actions" hidden>
+      <button id="start-all" class="btn small" type="button">Start all</button>
+      <button id="stop-all" class="btn small" type="button">Stop all</button>
+    </div>
     <section id="list" class="list"></section>
     <!-- Status changes are announced from here; the cards themselves update every second. -->
     <div id="announcer" class="sr-only" aria-live="polite"></div>
@@ -102,7 +106,27 @@
       </label>
 
       <p id="settings-error" class="form-error" role="alert"></p>
-      <p class="hint">Changes apply to tunnels you start after saving.</p>
+      <p class="hint">Protocol and path changes apply to tunnels you start after saving.</p>
+
+      <div class="field-group">
+        <div class="label">In the background</div>
+        <label class="check" id="close-to-tray-row">
+          <input type="checkbox" id="close-to-tray" />
+          <span>Keep tunnels running in the tray when you close the window</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="launch-at-login" />
+          <span>Open Cloudfairy in the tray when you log in</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="notify" />
+          <span>Notify me when a tunnel goes live or fails while the window is in the background</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="copy-on-live" />
+          <span>Copy a tunnel's link when it goes live</span>
+        </label>
+      </div>
 
       <div class="dialog-actions">
         <button class="btn ghost" value="cancel" type="submit" formnovalidate>Cancel</button>
@@ -123,12 +147,17 @@
         <input id="edit-target" spellcheck="false" />
       </label>
       <label class="check">
+        <input type="checkbox" id="edit-start-on-open" />
+        <span>Start when Cloudfairy opens</span>
+      </label>
+      <label class="check">
         <input type="checkbox" id="edit-rewrite-host" aria-describedby="edit-rewrite-hint" />
         <span>Send the local address as the Host header</span>
       </label>
       <p id="edit-rewrite-hint" class="hint check-hint">Turn this on if your dev server answers with
         "Blocked request" or "Invalid Host header". Vite and webpack-dev-server do this for hostnames
-        they don't know. Leave it off if your app builds links or redirects from the Host header.</p>
+        they don't know. Leave it off if your app builds links or redirects from the Host header.
+        With it on, your server's own host check no longer applies to requests through the link.</p>
       <p id="edit-error" class="form-error" role="alert"></p>
       <div class="dialog-actions">
         <button class="btn ghost" value="cancel" type="submit" formnovalidate>Cancel</button>
