@@ -1,7 +1,7 @@
 {
   "name": "cloudfairy",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Free desktop app (GUI) for Cloudflare quick tunnels: share localhost with a public HTTPS trycloudflare.com link",
   "keywords": [
     "cloudflare",
