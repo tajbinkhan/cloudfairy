@@ -36,19 +36,7 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "linux": {
-      "deb": {
-        "depends": [
-          "libayatana-appindicator3-1"
-        ]
-      },
-      "rpm": {
-        "depends": [
-          "libayatana-appindicator-gtk3"
-        ]
-      }
-    }
+    ]
   },
   "plugins": {
     "updater": {
