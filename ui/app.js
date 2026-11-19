@@ -147,7 +147,7 @@ function renderCard(t) {
   const active = t.status === "starting" || t.status === "running";
   el.dataset.status = visualStatus(t);
   $(".card-name", el).textContent = t.name;
-  $(".card-target", el).textContent = t.target;
+  $(".card-target", el).textContent = t.rewriteHost ? `${t.target} · Host rewritten` : t.target;
   $(".status-text", el).textContent = statusText(t);
 
   const toggle = $(".toggle", el);
@@ -359,6 +359,7 @@ function openEdit(t) {
   editingId = t.id;
   $("#edit-name").value = t.name;
   $("#edit-target").value = t.target;
+  $("#edit-rewrite-host").checked = Boolean(t.rewriteHost);
   $("#edit-error").textContent = "";
   $("#edit-dialog").showModal();
 }
@@ -369,6 +370,7 @@ async function saveEdit() {
       id: editingId,
       name: $("#edit-name").value,
       target: $("#edit-target").value,
+      rewriteHost: $("#edit-rewrite-host").checked,
     });
     Object.assign(tunnels.get(view.id), view);
     renderCard(tunnels.get(view.id));
@@ -562,7 +564,7 @@ async function init() {
   $("#app-update-later").addEventListener("click", () => ($("#app-update").hidden = true));
   $("#edit-save").addEventListener("click", saveEdit);
   $("#edit-form").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && e.target.type !== "checkbox") {
       e.preventDefault();
       saveEdit();
     }

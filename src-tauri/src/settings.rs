@@ -15,6 +15,10 @@ pub struct TunnelConfig {
     pub name: String,
     /// Normalised local origin, e.g. `http://localhost:3000`.
     pub target: String,
+    /// Send the local address as the `Host` header instead of the trycloudflare.com name.
+    /// Dev servers such as Vite reject requests for hostnames they don't know.
+    #[serde(default)]
+    pub rewrite_host: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

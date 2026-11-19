@@ -145,7 +145,7 @@ impl Tunnels {
         bin: &Path,
         protocol: &str,
     ) -> Result<(), String> {
-        let args = build_args(&cfg.target, protocol);
+        let args = build_args(&cfg.target, protocol, cfg.rewrite_host);
         let command_line = format!("{} {}", bin.display(), args.join(" "));
 
         // Claim the tunnel before the first await, so two quick clicks can't both launch it.
@@ -419,7 +419,7 @@ pub fn hide_console(cmd: &mut Command) {
 #[cfg(not(windows))]
 pub fn hide_console(_cmd: &mut Command) {}
 
-fn build_args(target: &str, protocol: &str) -> Vec<String> {
+fn build_args(target: &str, protocol: &str, rewrite_host: bool) -> Vec<String> {
     let mut args: Vec<String> = vec!["tunnel".into(), "--no-autoupdate".into()];
     if matches!(protocol, "quic" | "http2") {
         args.push("--protocol".into());
@@ -428,6 +428,10 @@ fn build_args(target: &str, protocol: &str) -> Vec<String> {
     // Local HTTPS dev servers almost always use self-signed certificates.
     if target.starts_with("https://") && host_port(target).is_some_and(|(h, _)| is_loopback(&h)) {
         args.push("--no-tls-verify".into());
+    }
+    if let Some(host) = rewrite_host.then(|| host_header(target)).flatten() {
+        args.push("--http-host-header".into());
+        args.push(host);
     }
     args.push("--url".into());
     args.push(target.into());
@@ -463,6 +467,14 @@ pub fn normalize_target(input: &str) -> Result<String, String> {
         Some((host, _)) if !host.is_empty() && !host.contains(char::is_whitespace) => Ok(url),
         _ => Err("That doesn't look like a valid address. Try something like localhost:3000.".into()),
     }
+}
+
+/// The `host[:port]` part of a URL, as a browser would send it in the `Host` header.
+fn host_header(url: &str) -> Option<String> {
+    let (_, rest) = url.split_once("://")?;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let authority = authority.rsplit('@').next()?;
+    (!authority.is_empty()).then(|| authority.to_string())
 }
 
 fn host_port(url: &str) -> Option<(String, u16)> {
@@ -621,13 +633,25 @@ mod tests {
     #[test]
     fn builds_args() {
         assert_eq!(
-            build_args("https://localhost:8443", "http2"),
+            build_args("https://localhost:8443", "http2", false),
             ["tunnel", "--no-autoupdate", "--protocol", "http2", "--no-tls-verify", "--url", "https://localhost:8443"]
         );
         assert_eq!(
-            build_args("http://localhost:3000", "auto"),
+            build_args("http://localhost:3000", "auto", false),
             ["tunnel", "--no-autoupdate", "--url", "http://localhost:3000"]
         );
+        assert_eq!(
+            build_args("http://localhost:5173/app", "auto", true),
+            ["tunnel", "--no-autoupdate", "--http-host-header", "localhost:5173", "--url", "http://localhost:5173/app"]
+        );
+    }
+
+    #[test]
+    fn host_header_keeps_port_and_drops_path() {
+        assert_eq!(host_header("http://127.0.0.1:8000/app?x=1").as_deref(), Some("127.0.0.1:8000"));
+        assert_eq!(host_header("https://[::1]:8443").as_deref(), Some("[::1]:8443"));
+        assert_eq!(host_header("http://localhost").as_deref(), Some("localhost"));
+        assert_eq!(host_header("localhost:3000"), None);
     }
     /// Full run against the real cloudflared and Cloudflare's network:
     /// `cargo test -- --ignored quick_tunnel_end_to_end`
@@ -649,6 +673,7 @@ mod tests {
                 id: "e2e".into(),
                 name: "e2e".into(),
                 target: normalize_target(&format!("127.0.0.1:{port}")).unwrap(),
+                rewrite_host: false,
             };
             let bin = which::which("cloudflared").expect("cloudflared on PATH");
 

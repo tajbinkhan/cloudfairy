@@ -53,13 +53,20 @@ fn add_tunnel(state: State<AppState>, name: String, target: String) -> CmdResult
         id: format!("t{nanos:x}"),
         name,
         target,
+        rewrite_host: false,
     };
     state.settings.update(|s| s.tunnels.push(cfg.clone()))?;
     Ok(state.tunnels.view(cfg))
 }
 
 #[tauri::command]
-fn update_tunnel(state: State<AppState>, id: String, name: String, target: String) -> CmdResult<TunnelView> {
+fn update_tunnel(
+    state: State<AppState>,
+    id: String,
+    name: String,
+    target: String,
+    rewrite_host: bool,
+) -> CmdResult<TunnelView> {
     if state.tunnels.is_active(&id) {
         return Err("Stop the tunnel before editing it.".into());
     }
@@ -71,6 +78,7 @@ fn update_tunnel(state: State<AppState>, id: String, name: String, target: Strin
                 t.name = name;
             }
             t.target = target;
+            t.rewrite_host = rewrite_host;
             t.clone()
         })
     })?;

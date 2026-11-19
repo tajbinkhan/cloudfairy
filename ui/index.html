@@ -122,6 +122,13 @@
         <span>Local port or address</span>
         <input id="edit-target" spellcheck="false" />
       </label>
+      <label class="check">
+        <input type="checkbox" id="edit-rewrite-host" aria-describedby="edit-rewrite-hint" />
+        <span>Send the local address as the Host header</span>
+      </label>
+      <p id="edit-rewrite-hint" class="hint check-hint">Turn this on if your dev server answers with
+        "Blocked request" or "Invalid Host header". Vite and webpack-dev-server do this for hostnames
+        they don't know. Leave it off if your app builds links or redirects from the Host header.</p>
       <p id="edit-error" class="form-error" role="alert"></p>
       <div class="dialog-actions">
         <button class="btn ghost" value="cancel" type="submit" formnovalidate>Cancel</button>
