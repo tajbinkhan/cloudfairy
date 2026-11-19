@@ -161,6 +161,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .form-error:empty { display: none; }
 .hint { color: var(--muted); font-size: 12.5px; }
 
+.check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text); cursor: pointer; }
+.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.check input:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.check-hint { margin-top: -6px; padding-left: 24px; line-height: 1.45; }
+
 /* ---------- page ---------- */
 .page { max-width: 880px; margin: 0 auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
 

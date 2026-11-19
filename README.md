@@ -54,6 +54,7 @@ You don't need to install `cloudflared` first. If Cloudfairy can't find it, one 
 - **Readable errors.** Rate limits, crashes and a missing binary show up on the tunnel's card.
 - **Live cloudflared logs** for each tunnel, with errors and warnings highlighted.
 - **Finds or downloads cloudflared.** It checks your Settings path first, then a copy it downloaded, then your `PATH` and the usual install locations (Homebrew, winget, Program Files).
+- **Host header rewrite** per tunnel, for dev servers that reject unknown hostnames (Vite, webpack-dev-server). Turn it on under Edit.
 - **Settings:** a custom cloudflared path, and the protocol (Auto / QUIC / HTTP2). Use HTTP2 on networks that block UDP.
 - **Updates itself.** When a new version is out, Cloudfairy offers to install it when it opens, then restarts. Signed updates come from GitHub Releases.
 - **Tunnels are saved between launches.** They don't start automatically, and every cloudflared process is stopped when you quit the app.
@@ -170,6 +171,6 @@ starts a server on that port and checks that the warning clears. It fetches the 
 - **The tunnel fails right away and you have `~/.cloudflared/config.yml`**: cloudflared doesn't support quick tunnels while a config file exists. Rename the file while you use quick tunnels.
 - **It never reaches "Live" on an office or school network**: set the protocol to HTTP/2 in Settings.
 - **The URL shows a Cloudflare 502 page**: your local server isn't running, or it's on a different port.
-- **Vite / webpack dev server says "host not allowed"**: add `.trycloudflare.com` to the dev server's allowed hosts. For Vite, that's `server.allowedHosts`.
+- **Vite / webpack dev server says "Blocked request" or "Invalid Host header"**: open the tunnel's Edit dialog and turn on "Send the local address as the Host header". You can instead add `.trycloudflare.com` to the dev server's allowed hosts (for Vite, `server.allowedHosts`). Use that option if your app builds links or redirects from the Host header, because the rewrite makes them point at `localhost`.
 
 Quick tunnels are meant for testing and sharing. They have no uptime guarantee, and the URL changes every time you start one.
