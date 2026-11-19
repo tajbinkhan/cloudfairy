@@ -1,4 +1,5 @@
-//! Persistent settings: the cloudflared location, protocol choice and saved tunnels.
+//! Persistent settings: the cloudflared location, protocol choice, background behavior and
+//! saved tunnels.
 
 use std::{
     fs,
@@ -19,6 +20,9 @@ pub struct TunnelConfig {
     /// Dev servers such as Vite reject requests for hostnames they don't know.
     #[serde(default)]
     pub rewrite_host: bool,
+    /// Start this tunnel when Cloudfairy opens.
+    #[serde(default)]
+    pub start_on_open: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -29,6 +33,12 @@ pub struct Settings {
     /// `auto`, `quic` or `http2`.
     pub protocol: String,
     pub tunnels: Vec<TunnelConfig>,
+    /// Closing the window while tunnels run hides it to the tray instead of quitting.
+    pub close_to_tray: bool,
+    /// Desktop notifications when a tunnel goes live or fails while the window isn't focused.
+    pub notify: bool,
+    /// Copy a tunnel's link to the clipboard when it goes live.
+    pub copy_on_live: bool,
 }
 
 impl Default for Settings {
@@ -37,6 +47,9 @@ impl Default for Settings {
             cloudflared_path: None,
             protocol: "auto".into(),
             tunnels: Vec::new(),
+            close_to_tray: true,
+            notify: true,
+            copy_on_live: false,
         }
     }
 }
@@ -82,5 +95,21 @@ impl SettingsStore {
         fs::write(&tmp, json).map_err(|e| format!("Couldn't save settings: {e}"))?;
         fs::rename(&tmp, &self.path).map_err(|e| format!("Couldn't save settings: {e}"))?;
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_settings_get_new_defaults() {
+        let old = r#"{"cloudflaredPath":null,"protocol":"http2",
+            "tunnels":[{"id":"t1","name":"App","target":"http://localhost:3000"}]}"#;
+        let s: Settings = serde_json::from_str(old).unwrap();
+        assert_eq!(s.protocol, "http2");
+        assert!(s.close_to_tray && s.notify && !s.copy_on_live);
+        let t = &s.tunnels[0];
+        assert!(!t.rewrite_host && !t.start_on_open);
     }
 }

@@ -165,6 +165,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .check input:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
 .check-hint { margin-top: -6px; padding-left: 24px; line-height: 1.45; }
+.field-group { display: flex; flex-direction: column; gap: 10px; }
+.check { align-items: flex-start; }
+.check input { margin-top: 1px; flex: none; }
 
 /* ---------- page ---------- */
 .page { max-width: 880px; margin: 0 auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
@@ -200,6 +203,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 
 /* ---------- tunnel cards ---------- */
 .list { display: flex; flex-direction: column; gap: 12px; }
+.list-actions { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: -4px; }
 
 .card {
   background: var(--surface);
@@ -258,6 +262,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 
 .card-foot { display: flex; align-items: center; gap: 4px; margin: -4px -6px -6px; }
 .card-foot .spacer { flex: 1; }
+.card-stats { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; padding-left: 6px; }
+.card-stats .failed { color: var(--err); }
 .card-foot .btn[aria-expanded="true"] svg { transform: rotate(180deg); }
 
 .logs {

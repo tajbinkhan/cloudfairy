@@ -47,7 +47,7 @@ You don't need to install `cloudflared` first. If Cloudfairy can't find it, one 
 
 ## Features
 
-- **Several tunnels at once**, each with its own Start/Stop button, status, and uptime.
+- **Several tunnels at once**, each with its own Start/Stop button, status, uptime and request count. Start all or Stop all with one click.
 - **Any local address:** `3000`, `:8080`, `localhost:5173`, `127.0.0.1:8000/app` or `https://localhost:8443`.
 - **Copy, Open in browser, or show a QR code** to open the link on your phone.
 - **Checks your local server.** If nothing is listening on the port, a warning appears. It clears by itself once your server starts.
@@ -55,9 +55,12 @@ You don't need to install `cloudflared` first. If Cloudfairy can't find it, one 
 - **Live cloudflared logs** for each tunnel, with errors and warnings highlighted.
 - **Finds or downloads cloudflared.** It checks your Settings path first, then a copy it downloaded, then your `PATH` and the usual install locations (Homebrew, winget, Program Files).
 - **Host header rewrite** per tunnel, for dev servers that reject unknown hostnames (Vite, webpack-dev-server). Turn it on under Edit.
+- **Runs in the tray.** Close the window while tunnels are running and they keep running. The tray menu copies or opens each link, starts and stops tunnels, and quits.
+- **Notifications** when a tunnel goes live or fails while the window is in the background. Turn on "Copy a tunnel's link when it goes live" to get each new link on your clipboard.
+- **Starts with your computer, if you want.** Mark tunnels "Start when Cloudfairy opens" and turn on "Open Cloudfairy in the tray when you log in".
 - **Settings:** a custom cloudflared path, and the protocol (Auto / QUIC / HTTP2). Use HTTP2 on networks that block UDP.
 - **Updates itself.** When a new version is out, Cloudfairy offers to install it when it opens, then restarts. Signed updates come from GitHub Releases.
-- **Tunnels are saved between launches.** They don't start automatically, and every cloudflared process is stopped when you quit the app.
+- **Tunnels are saved between launches.** Only the ones you mark start automatically, and every cloudflared process is stopped when you quit the app.
 
 ## How it works
 
@@ -65,9 +68,10 @@ You don't need to install `cloudflared` first. If Cloudfairy can't find it, one 
   <img src="./assets/readme/how-it-works.svg" width="100%" alt="Cloudfairy starts cloudflared, which opens an outbound connection to Cloudflare. Visitors open the trycloudflare.com link and Cloudflare forwards their requests through cloudflared to your app. Cloudfairy reads cloudflared's output: the URL makes the link appear, 'Registered tunnel connection' turns the status Live, ERR lines become readable errors, and a port check warns until your server answers.">
 </p>
 
-Cloudfairy runs `cloudflared tunnel --no-autoupdate --url <target>` for each tunnel and reads its
-output line by line. cloudflared only makes outbound connections, so you don't open any ports on
-your router or firewall.
+Cloudfairy runs `cloudflared tunnel --no-autoupdate --metrics 127.0.0.1:0 --url <target>` for each
+tunnel and reads its output line by line. Every two seconds it reads the request counts from
+cloudflared's metrics server, which only listens on `127.0.0.1`. cloudflared only makes outbound
+connections, so you don't open any ports on your router or firewall.
 
 <details>
 <summary><b>Code layout and where files are stored</b></summary>
@@ -75,12 +79,15 @@ your router or firewall.
 ```
 ui/ (HTML/CSS/JS) ──invoke──▶ src-tauri/src/main.rs (commands)
         ▲                          │
-        └──── events ◀──── tunnel.rs: spawns `cloudflared tunnel --no-autoupdate --url <target>`
+        └──── events ◀──── tunnel.rs: spawns `cloudflared tunnel --metrics 127.0.0.1:0 --url <target>`
                tunnel-update         reads stdout/stderr line by line:
                tunnel-log              • URL in the banner box         → publicUrl
                download-progress       • "Registered tunnel connection" → status "running"
                                        • "ERR …"                        → error message
-               app-update-progress   polls the child process for exit → "stopped" / "error"
+               app-update-progress     • "Starting metrics server on …" → metrics address
+                                     polls the child process for exit → "stopped" / "error"
+                                     reads /metrics every 2 s          → requests, requestErrors
+                                     reports changes ──▶ background.rs: tray menu, notifications
 ```
 
 | File | Purpose |
@@ -90,6 +97,7 @@ ui/ (HTML/CSS/JS) ──invoke──▶ src-tauri/src/main.rs (commands)
 | `src-tauri/src/app_update.rs` | Updating Cloudfairy itself: checking the latest GitHub release, downloading and verifying the signed update |
 | `src-tauri/src/settings.rs` | `settings.json` persistence |
 | `src-tauri/src/main.rs` | Tauri commands and app setup; kills all tunnels on exit |
+| `src-tauri/src/background.rs` | Tray icon and menu, notifications, copying new links, starting tunnels on launch |
 | `ui/` | The interface. Plain HTML/CSS/JS, no bundler. Follows the system light/dark theme. |
 | `site/` | The project website (landing page, `robots.txt`, `sitemap.xml`, social image). [`pages.yml`](.github/workflows/pages.yml) publishes it to GitHub Pages on every push to `main` that changes it. |
 
@@ -108,7 +116,7 @@ Built with Rust and [Tauri 2](https://v2.tauri.app). You need:
 | | Needed |
 |---|---|
 | All | [Rust](https://rustup.rs) (stable) and [Node.js](https://nodejs.org) 18+ (only used to run the Tauri CLI) |
-| Linux | `sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev build-essential` (or your distro's equivalents) |
+| Linux | `sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev libayatana-appindicator3-dev build-essential` (or your distro's equivalents) |
 | macOS | Xcode Command Line Tools: `xcode-select --install` |
 | Windows | [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) ("Desktop development with C++"). WebView2 is already included in Windows 10/11. |
 

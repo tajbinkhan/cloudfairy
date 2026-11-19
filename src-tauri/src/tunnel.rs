@@ -6,7 +6,7 @@ use std::{
     process::Stdio,
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex, MutexGuard,
+        Arc, Mutex, MutexGuard, OnceLock,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -22,6 +22,8 @@ use crate::{child_guard, settings::TunnelConfig};
 
 const MAX_LOG_LINES: usize = 1000;
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// How often request counts are read from cloudflared's metrics server, in poll ticks (2 s).
+const METRICS_TICKS: u32 = 8;
 
 pub const EVENT_UPDATE: &str = "tunnel-update";
 pub const EVENT_LOG: &str = "tunnel-log";
@@ -46,7 +48,24 @@ pub struct RuntimeView {
     /// Unix time in milliseconds.
     pub started_at: Option<u64>,
     pub connections: u32,
+    /// Requests cloudflared has proxied in this run, from its metrics server.
+    pub requests: u64,
+    /// Requests that failed: cloudflared couldn't reach the server, or it answered with a 5xx.
+    pub request_errors: u64,
 }
+
+/// What the rest of the app hears about a tunnel, for the tray and notifications.
+#[derive(Clone, Debug)]
+pub enum Change {
+    /// Status, link or connection count changed.
+    Updated,
+    /// The tunnel has a link and its first connection to Cloudflare (once per run).
+    Live { id: String, url: String },
+    /// The tunnel failed (once per run).
+    Failed { id: String, error: String },
+}
+
+type Listener = Box<dyn Fn(Change) + Send + Sync>;
 
 #[derive(Clone, Serialize)]
 pub struct TunnelView {
@@ -83,6 +102,10 @@ struct Runtime {
     /// Identifies one launch, so output from an old process can't touch a newer one.
     run_id: u64,
     stopping: bool,
+    /// Address of cloudflared's metrics server, read from its log.
+    metrics: Option<String>,
+    live_announced: bool,
+    fail_announced: bool,
 }
 
 impl Runtime {
@@ -102,6 +125,8 @@ impl Runtime {
 struct Inner {
     map: Mutex<HashMap<String, Runtime>>,
     next_run: AtomicU64,
+    /// Runs while `map` is locked, so it must not call back into `Tunnels`.
+    listener: OnceLock<Listener>,
 }
 
 #[derive(Clone, Default)]
@@ -112,6 +137,46 @@ pub struct Tunnels {
 impl Tunnels {
     fn map(&self) -> MutexGuard<'_, HashMap<String, Runtime>> {
         self.inner.map.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Registers the one listener for [`Change`]s. It runs while the tunnel map is locked,
+    /// so it should only hand the change on (to a channel, say).
+    pub fn set_listener(&self, f: impl Fn(Change) + Send + Sync + 'static) {
+        let _ = self.inner.listener.set(Box::new(f));
+    }
+
+    /// Sends the update to the window and tells the listener what changed.
+    fn emit<R: TauriRuntime>(&self, app: &AppHandle<R>, id: &str, rt: &mut Runtime) {
+        emit_update(app, id, &rt.view);
+        let Some(listener) = self.inner.listener.get() else { return };
+        listener(Change::Updated);
+        let view = &rt.view;
+        if let (Status::Running, Some(url), false) = (view.status, &view.public_url, rt.live_announced) {
+            rt.live_announced = true;
+            listener(Change::Live { id: id.into(), url: url.clone() });
+        }
+        if view.status == Status::Error && !rt.fail_announced {
+            rt.fail_announced = true;
+            let error = view.error.clone().unwrap_or_else(|| "The tunnel stopped.".into());
+            listener(Change::Failed { id: id.into(), error });
+        }
+    }
+
+    /// Marks a tunnel as failed before cloudflared ran, e.g. when it can't be found.
+    pub fn fail<R: TauriRuntime>(&self, app: &AppHandle<R>, id: &str, message: String) {
+        let mut map = self.map();
+        let rt = map.entry(id.to_string()).or_default();
+        if rt.active() {
+            return;
+        }
+        rt.view = RuntimeView {
+            status: Status::Error,
+            error: Some(message.clone()),
+            ..Default::default()
+        };
+        rt.fail_announced = false;
+        rt.log(format!("[cloudfairy] {message}"));
+        self.emit(app, id, rt);
     }
 
     pub fn view(&self, config: TunnelConfig) -> TunnelView {
@@ -164,10 +229,19 @@ impl Tunnels {
             rt.launching = true;
             rt.run_id = run_id;
             rt.stopping = false;
+            rt.metrics = None;
+            rt.live_announced = false;
+            rt.fail_announced = false;
             rt.conns.clear();
             rt.logs.clear();
             rt.log(format!("$ {command_line}"));
-            emit_update(app, &cfg.id, &rt.view);
+            if let Some(host) = cfg.rewrite_host.then(|| host_header(&cfg.target)).flatten() {
+                rt.log(format!(
+                    "[cloudfairy] Sending \"Host: {host}\" to your server. \
+                     Anyone with the link can reach it while the tunnel runs."
+                ));
+            }
+            self.emit(app, &cfg.id, rt);
             run_id
         };
 
@@ -201,7 +275,7 @@ impl Tunnels {
                         ..Default::default()
                     };
                     rt.log(format!("[cloudfairy] {msg}"));
-                    emit_update(app, &cfg.id, &rt.view);
+                    self.emit(app, &cfg.id, rt);
                     return Err(msg);
                 }
             };
@@ -233,7 +307,7 @@ impl Tunnels {
             if let Some(rt) = map.get_mut(&cfg.id).filter(|rt| rt.run_id == run_id && !rt.stopping) {
                 rt.view.warning = Some(warning.clone());
                 rt.log(format!("[cloudfairy] {warning}"));
-                emit_update(app, &cfg.id, &rt.view);
+                self.emit(app, &cfg.id, rt);
             }
         }
         Ok(())
@@ -288,6 +362,9 @@ impl Tunnels {
             return;
         }
 
+        if rt.metrics.is_none() {
+            rt.metrics = metrics_addr(&line);
+        }
         let view = &mut rt.view;
         let mut changed = false;
         if view.public_url.is_none() {
@@ -335,7 +412,7 @@ impl Tunnels {
 
         let _ = app.emit(EVENT_LOG, LogEvent { id, line: &line });
         if changed {
-            emit_update(app, id, &rt.view);
+            self.emit(app, id, rt);
         }
         rt.log(line);
     }
@@ -347,7 +424,7 @@ impl Tunnels {
         let (success, description) = loop {
             tokio::time::sleep(POLL_INTERVAL).await;
             tick = tick.wrapping_add(1);
-            let recheck = {
+            let (recheck, metrics) = {
                 let mut map = self.map();
                 let Some(rt) = map.get_mut(&id) else { return };
                 if rt.run_id != run_id {
@@ -359,14 +436,31 @@ impl Tunnels {
                     Ok(None) => {}
                     Err(e) => break (false, e.to_string()),
                 }
-                rt.view.warning.is_some() && tick % 12 == 0
+                let metrics = (tick % METRICS_TICKS == 0 && rt.view.status == Status::Running)
+                    .then(|| rt.metrics.clone())
+                    .flatten();
+                (rt.view.warning.is_some() && tick % 12 == 0, metrics)
             };
             if recheck && probe_local(&target).await.is_none() {
                 let mut map = self.map();
                 if let Some(rt) = map.get_mut(&id).filter(|rt| rt.run_id == run_id) {
                     rt.view.warning = None;
                     rt.log(format!("[cloudfairy] {target} is answering now."));
-                    emit_update(&app, &id, &rt.view);
+                    self.emit(&app, &id, rt);
+                }
+            }
+            let counts = match metrics {
+                Some(addr) => fetch_metrics(&addr).await,
+                None => None,
+            };
+            if let Some(counts) = counts {
+                let mut map = self.map();
+                if let Some(rt) = map.get_mut(&id).filter(|rt| rt.run_id == run_id) {
+                    if (rt.view.requests, rt.view.request_errors) != counts {
+                        (rt.view.requests, rt.view.request_errors) = counts;
+                        // Only the window shows counts, so the tray isn't rebuilt for them.
+                        emit_update(&app, &id, &rt.view);
+                    }
                 }
             }
         };
@@ -395,8 +489,51 @@ impl Tunnels {
             }
         }
         rt.log(format!("[cloudfairy] cloudflared exited ({description})"));
-        emit_update(&app, &id, &rt.view);
+        rt.metrics = None;
+        self.emit(&app, &id, rt);
     }
+}
+
+/// Reads `127.0.0.1:7755` from "Starting metrics server on 127.0.0.1:7755/metrics".
+/// Only loopback addresses are accepted, since Cloudfairy connects to it.
+fn metrics_addr(line: &str) -> Option<String> {
+    let rest = line.split_once("Starting metrics server on ")?.1.trim();
+    let addr = rest.strip_suffix("/metrics").unwrap_or(rest);
+    let (host, port) = addr.rsplit_once(':')?;
+    let loopback = matches!(host, "127.0.0.1" | "localhost" | "[::1]");
+    (loopback && port.parse::<u16>().is_ok_and(|p| p != 0)).then(|| addr.to_string())
+}
+
+async fn fetch_metrics(addr: &str) -> Option<(u64, u64)> {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    let client = CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(1))
+            .no_proxy()
+            .build()
+            .unwrap_or_default()
+    });
+    let response = client.get(format!("http://{addr}/metrics")).send().await.ok()?;
+    let text = response.text().await.ok()?;
+    Some(parse_metrics(&text))
+}
+
+/// Total requests, and failed ones (proxy errors plus 5xx responses), from Prometheus text.
+fn parse_metrics(text: &str) -> (u64, u64) {
+    let (mut total, mut errors) = (0u64, 0u64);
+    for line in text.lines() {
+        let Some((name, value)) = line.rsplit_once(' ') else { continue };
+        let Ok(value) = value.parse::<f64>() else { continue };
+        let value = value.max(0.0) as u64;
+        if name == "cloudflared_tunnel_total_requests" {
+            total = value;
+        } else if name == "cloudflared_tunnel_request_errors"
+            || (name.starts_with("cloudflared_tunnel_response_by_code{") && name.contains("status_code=\"5"))
+        {
+            errors += value;
+        }
+    }
+    (total, errors)
 }
 
 fn emit_update<R: TauriRuntime>(app: &AppHandle<R>, id: &str, runtime: &RuntimeView) {
@@ -420,7 +557,13 @@ pub fn hide_console(cmd: &mut Command) {
 pub fn hide_console(_cmd: &mut Command) {}
 
 fn build_args(target: &str, protocol: &str, rewrite_host: bool) -> Vec<String> {
-    let mut args: Vec<String> = vec!["tunnel".into(), "--no-autoupdate".into()];
+    // Port 0 lets cloudflared pick a free port, which it then logs (see `metrics_addr`).
+    let mut args: Vec<String> = vec![
+        "tunnel".into(),
+        "--no-autoupdate".into(),
+        "--metrics".into(),
+        "127.0.0.1:0".into(),
+    ];
     if matches!(protocol, "quic" | "http2") {
         args.push("--protocol".into());
         args.push(protocol.into());
@@ -634,16 +777,38 @@ mod tests {
     fn builds_args() {
         assert_eq!(
             build_args("https://localhost:8443", "http2", false),
-            ["tunnel", "--no-autoupdate", "--protocol", "http2", "--no-tls-verify", "--url", "https://localhost:8443"]
+            ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:0", "--protocol", "http2", "--no-tls-verify", "--url", "https://localhost:8443"]
         );
         assert_eq!(
             build_args("http://localhost:3000", "auto", false),
-            ["tunnel", "--no-autoupdate", "--url", "http://localhost:3000"]
+            ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:0", "--url", "http://localhost:3000"]
         );
         assert_eq!(
             build_args("http://localhost:5173/app", "auto", true),
-            ["tunnel", "--no-autoupdate", "--http-host-header", "localhost:5173", "--url", "http://localhost:5173/app"]
+            ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:0", "--http-host-header", "localhost:5173", "--url", "http://localhost:5173/app"]
         );
+    }
+
+    #[test]
+    fn reads_metrics_address() {
+        let line = "2026-11-19T04:39:11Z INF Starting metrics server on 127.0.0.1:7755/metrics";
+        assert_eq!(metrics_addr(line).as_deref(), Some("127.0.0.1:7755"));
+        assert_eq!(metrics_addr("INF Starting metrics server on 10.0.0.5:7755/metrics"), None);
+        assert_eq!(metrics_addr("INF Starting metrics server on 127.0.0.1:0/metrics"), None);
+        assert_eq!(metrics_addr("INF Registered tunnel connection"), None);
+    }
+
+    #[test]
+    fn counts_requests_and_errors() {
+        let text = "# HELP cloudflared_tunnel_total_requests Amount of requests proxied\n\
+            cloudflared_tunnel_concurrent_requests_per_tunnel 0\n\
+            cloudflared_tunnel_request_errors 2\n\
+            cloudflared_tunnel_response_by_code{status_code=\"200\"} 40\n\
+            cloudflared_tunnel_response_by_code{status_code=\"404\"} 3\n\
+            cloudflared_tunnel_response_by_code{status_code=\"502\"} 1\n\
+            cloudflared_tunnel_total_requests 46\n";
+        assert_eq!(parse_metrics(text), (46, 3));
+        assert_eq!(parse_metrics(""), (0, 0));
     }
 
     #[test]
@@ -674,8 +839,12 @@ mod tests {
                 name: "e2e".into(),
                 target: normalize_target(&format!("127.0.0.1:{port}")).unwrap(),
                 rewrite_host: false,
+                start_on_open: false,
             };
             let bin = which::which("cloudflared").expect("cloudflared on PATH");
+            let changes = Arc::new(Mutex::new(Vec::new()));
+            let sink = changes.clone();
+            tunnels.set_listener(move |c| sink.lock().unwrap().push(c));
 
             tunnels.start(&handle, &cfg, &bin, "auto").await.unwrap();
             assert!(tunnels.start(&handle, &cfg, &bin, "auto").await.is_err(), "double start is rejected");
@@ -716,6 +885,11 @@ mod tests {
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
             assert_eq!(body, "hello from cloudfairy", "request through the public URL reaches the local server");
+
+            let view = wait_for(&tunnels, &cfg, 10, |v| v.requests >= 1).await;
+            assert_eq!(view.request_errors, 0, "the request is counted from cloudflared's metrics");
+            let live = changes.lock().unwrap().iter().filter(|c| matches!(c, Change::Live { .. })).count();
+            assert_eq!(live, 1, "the listener hears about going live once");
 
             tunnels.stop(&cfg.id);
             let view = wait_for(&tunnels, &cfg, 10, |v| v.status == Status::Stopped).await;
