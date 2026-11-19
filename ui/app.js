@@ -26,6 +26,8 @@ const ICON = {
 const tunnels = new Map();
 /** ids of cards whose log panel is open */
 const openLogs = new Set();
+/** ids of cards whose request list is open */
+const openRequests = new Set();
 /** ids whose start_tunnel call hasn't returned yet */
 const startPending = new Set();
 let cfInfo = null;
@@ -127,12 +129,21 @@ function cardTemplate(t) {
     <p class="notice error" hidden></p>
     <div class="card-foot">
       <button class="btn ghost small" type="button" data-action="logs" aria-expanded="false">${ICON.chevron}<span>Logs</span></button>
+      <button class="btn ghost small" type="button" data-action="requests" aria-expanded="false">${ICON.chevron}<span>Requests</span></button>
       <span class="card-stats" hidden></span>
       <span class="spacer"></span>
       <button class="btn ghost small" type="button" data-action="edit">${ICON.edit}<span>Edit</span></button>
       <button class="btn ghost small" type="button" data-action="remove">${ICON.trash}<span>Remove</span></button>
     </div>
-    <pre class="logs" hidden></pre>`;
+    <pre class="logs" hidden></pre>
+    <section class="requests" hidden>
+      <div class="requests-head">
+        <span class="requests-note">Newest first. Click a request to see its headers.</span>
+        <button class="btn ghost small" type="button" data-action="clear-requests">Clear</button>
+      </div>
+      <p class="requests-empty"></p>
+      <ol class="req-list"></ol>
+    </section>`;
   return el;
 }
 
@@ -252,6 +263,142 @@ function appendLog(id, line) {
   if (atBottom) pre.scrollTop = pre.scrollHeight;
 }
 
+// ---------------------------------------------------------------- request list
+
+const MAX_REQUEST_ROWS = 500;
+
+function requestPath(url) {
+  try {
+    const u = new URL(url);
+    return u.pathname + u.search;
+  } catch {
+    return url;
+  }
+}
+
+function formatClock(ms) {
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+}
+
+function formatDuration(ms) {
+  if (ms == null) return "";
+  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s`;
+}
+
+function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+const GUESS_NOTE =
+  "Other requests were waiting on the same connection, and cloudflared doesn't say which one a response belongs to. This status was matched by order and may belong to a neighbouring request.";
+
+/** [text, css class, tooltip] for an entry's status cell. */
+function requestStatus(e, live) {
+  // Rust's failure_text in requests.rs writes this message.
+  if (e.error === "Canceled by the visitor") return ["Canceled", "s-wait", e.error];
+  if (e.error) return ["Failed", "s-err", e.error];
+  if (e.status == null) return live ? ["…", "s-wait", "Waiting for your server"] : ["–", "s-wait", "No response was logged"];
+  const cls = e.status >= 500 ? "s-err" : e.status >= 400 ? "s-warn" : e.status >= 300 ? "s-redirect" : "s-ok";
+  const tip = `${e.status} ${e.statusText ?? ""}`.trim();
+  return e.guessed ? [`${e.status}?`, `${cls} guess`, `${tip}. ${GUESS_NOTE}`] : [String(e.status), cls, tip];
+}
+
+function requestRowHtml(e, live) {
+  const [status, cls, tip] = requestStatus(e, live);
+  const visitor = [e.ip, e.country].filter(Boolean).join(", ");
+  const facts = [
+    ["URL", e.url],
+    ["Result", e.error ?? (e.status != null ? `${e.status} ${e.statusText ?? ""}` : "No response yet")],
+    ["Visitor", visitor],
+    ["User agent", e.userAgent],
+    ["Body", e.size ? formatBytes(e.size) : ""],
+  ].filter(([, v]) => v);
+  if (e.guessed) facts.push(["Note", GUESS_NOTE]);
+  const dl = (rows) => rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join("");
+  return `
+    <button class="req-row" type="button" data-action="request" aria-expanded="false">
+      <span class="req-time">${escapeHtml(formatClock(e.at))}</span>
+      <span class="req-method">${escapeHtml(e.method)}</span>
+      <span class="req-path">${escapeHtml(requestPath(e.url))}</span>
+      <span class="req-status ${cls}" title="${escapeHtml(tip)}">${escapeHtml(status)}</span>
+      <span class="req-dur">${escapeHtml(formatDuration(e.durationMs))}</span>
+    </button>
+    <div class="req-detail" hidden>
+      <dl>${dl(facts)}</dl>
+      ${e.headers.length ? `<h4>Request headers</h4><dl class="req-headers">${dl(e.headers)}</dl>` : ""}
+    </div>`;
+}
+
+function renderRequestEmpty(id, el) {
+  const t = tunnels.get(id);
+  const empty = $(".requests-empty", el);
+  empty.hidden = $(".req-list", el).childElementCount > 0;
+  empty.textContent =
+    t?.status === "running" ? "No requests yet. Open the link and they show up here." : "Start the tunnel to see requests.";
+}
+
+function upsertRequest(id, entry) {
+  if (!openRequests.has(id)) return;
+  const el = cardFor(id);
+  if (!el) return;
+  const list = $(".req-list", el);
+  const live = tunnels.get(id)?.status === "running";
+  let row = $(`li[data-req="${entry.id}"]`, list);
+  if (row) {
+    const open = $(".req-row", row).getAttribute("aria-expanded") === "true";
+    row.innerHTML = requestRowHtml(entry, live);
+    if (open) toggleRequestRow($(".req-row", row));
+  } else {
+    row = document.createElement("li");
+    row.dataset.req = entry.id;
+    row.innerHTML = requestRowHtml(entry, live);
+    list.prepend(row);
+    while (list.childElementCount > MAX_REQUEST_ROWS) list.lastElementChild.remove();
+  }
+  renderRequestEmpty(id, el);
+}
+
+async function loadRequests(id, el) {
+  const entries = await invoke("tunnel_requests", { id });
+  const live = tunnels.get(id)?.status === "running";
+  $(".req-list", el).innerHTML = entries
+    .slice(-MAX_REQUEST_ROWS)
+    .reverse()
+    .map((e) => `<li data-req="${e.id}">${requestRowHtml(e, live)}</li>`)
+    .join("");
+  renderRequestEmpty(id, el);
+}
+
+async function toggleRequests(id, el) {
+  const panel = $(".requests", el);
+  const btn = $('[data-action="requests"]', el);
+  if (openRequests.has(id)) {
+    openRequests.delete(id);
+    panel.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    return;
+  }
+  openRequests.add(id);
+  btn.setAttribute("aria-expanded", "true");
+  await loadRequests(id, el);
+  panel.hidden = false;
+}
+
+function toggleRequestRow(btn) {
+  const detail = btn.nextElementSibling;
+  const open = btn.getAttribute("aria-expanded") !== "true";
+  btn.setAttribute("aria-expanded", String(open));
+  detail.hidden = !open;
+}
+
+async function clearRequests(id, el) {
+  await invoke("clear_tunnel_requests", { id }).catch((e) => toast(errText(e)));
+  $(".req-list", el).innerHTML = "";
+  renderRequestEmpty(id, el);
+}
+
 async function startTunnel(id) {
   const t = tunnels.get(id);
   if (!t || startPending.has(id)) return;
@@ -294,6 +441,7 @@ async function removeTunnel(id, btn) {
     await invoke("remove_tunnel", { id });
     tunnels.delete(id);
     openLogs.delete(id);
+    openRequests.delete(id);
     cardFor(id)?.remove();
     updateEmpty();
   } catch (e) {
@@ -335,6 +483,15 @@ async function onCardClick(ev) {
       break;
     case "logs":
       toggleLogs(id, el);
+      break;
+    case "requests":
+      toggleRequests(id, el);
+      break;
+    case "request":
+      toggleRequestRow(target);
+      break;
+    case "clear-requests":
+      clearRequests(id, el);
       break;
     case "edit":
       openEdit(t);
@@ -629,8 +786,14 @@ async function init() {
     Object.assign(t, payload);
     renderCard(t);
     announceChange(before, t);
+    // A new run starts with an empty list; a stopped one can't answer what's still waiting.
+    if (openRequests.has(t.id) && before.status !== t.status) {
+      const el = cardFor(t.id);
+      if (el) loadRequests(t.id, el);
+    }
   });
   await listen("tunnel-log", ({ payload }) => appendLog(payload.id, payload.line));
+  await listen("tunnel-request", ({ payload }) => upsertRequest(payload.id, payload.entry));
   await listen("download-progress", ({ payload }) => showProgress(payload));
   await listen("app-update-progress", ({ payload }) => showProgress(payload, ".app-progress"));
 

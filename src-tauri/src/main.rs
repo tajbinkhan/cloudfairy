@@ -5,6 +5,7 @@ mod app_update;
 mod background;
 mod child_guard;
 mod cloudflared;
+mod requests;
 mod settings;
 mod tunnel;
 
@@ -136,6 +137,16 @@ fn stop_tunnel(state: State<AppState>, id: String) {
 #[tauri::command]
 fn tunnel_logs(state: State<AppState>, id: String) -> Vec<String> {
     state.tunnels.logs(&id)
+}
+
+#[tauri::command]
+fn tunnel_requests(state: State<AppState>, id: String) -> Vec<requests::RequestEntry> {
+    state.tunnels.requests(&id)
+}
+
+#[tauri::command]
+fn clear_tunnel_requests(state: State<AppState>, id: String) {
+    state.tunnels.clear_requests(&id);
 }
 
 #[derive(Serialize)]
@@ -340,6 +351,8 @@ fn main() {
             start_tunnel,
             stop_tunnel,
             tunnel_logs,
+            tunnel_requests,
+            clear_tunnel_requests,
             get_settings,
             save_settings,
             cloudflared_info,
