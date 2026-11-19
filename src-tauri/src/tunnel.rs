@@ -362,7 +362,9 @@ impl Tunnels {
             return;
         }
 
-        if rt.metrics.is_none() {
+        // cloudflared logs this before its first connection to Cloudflare. Later lines can echo
+        // visitors' request URLs, so a look-alike line after that point is ignored.
+        if rt.metrics.is_none() && rt.view.status == Status::Starting && rt.conns.is_empty() {
             rt.metrics = metrics_addr(&line);
         }
         let view = &mut rt.view;
@@ -497,7 +499,7 @@ impl Tunnels {
 /// Reads `127.0.0.1:7755` from "Starting metrics server on 127.0.0.1:7755/metrics".
 /// Only loopback addresses are accepted, since Cloudfairy connects to it.
 fn metrics_addr(line: &str) -> Option<String> {
-    let rest = line.split_once("Starting metrics server on ")?.1.trim();
+    let rest = line.split_once(" INF Starting metrics server on ")?.1.trim();
     let addr = rest.strip_suffix("/metrics").unwrap_or(rest);
     let (host, port) = addr.rsplit_once(':')?;
     let loopback = matches!(host, "127.0.0.1" | "localhost" | "[::1]");
@@ -796,6 +798,10 @@ mod tests {
         assert_eq!(metrics_addr("INF Starting metrics server on 10.0.0.5:7755/metrics"), None);
         assert_eq!(metrics_addr("INF Starting metrics server on 127.0.0.1:0/metrics"), None);
         assert_eq!(metrics_addr("INF Registered tunnel connection"), None);
+        // An error line echoing a visitor's URL isn't taken for the real one.
+        let echoed = "2026-11-19T04:40:00Z ERR Unable to reach the origin service \
+                      dest=https://x.trycloudflare.com/Starting metrics server on 127.0.0.1:6379/metrics";
+        assert_eq!(metrics_addr(echoed), None);
     }
 
     #[test]
