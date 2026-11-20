@@ -235,18 +235,25 @@ function tickUptime() {
   }
 }
 
+function closeLogs(id, el) {
+  openLogs.delete(id);
+  $(".logs", el).hidden = true;
+  $('[data-action="logs"]', el).setAttribute("aria-expanded", "false");
+}
+
 async function toggleLogs(id, el) {
-  const pre = $(".logs", el);
-  const btn = $('[data-action="logs"]', el);
   if (openLogs.has(id)) {
-    openLogs.delete(id);
-    pre.hidden = true;
-    btn.setAttribute("aria-expanded", "false");
+    closeLogs(id, el);
     return;
   }
+  // A card shows one panel at a time.
+  closeRequests(id, el);
+  const pre = $(".logs", el);
   openLogs.add(id);
-  btn.setAttribute("aria-expanded", "true");
+  $('[data-action="logs"]', el).setAttribute("aria-expanded", "true");
   const lines = await invoke("tunnel_logs", { id });
+  // The panel may have been closed while the lines were loading.
+  if (!openLogs.has(id)) return;
   pre.innerHTML = lines.length ? lines.map(logLineHtml).join("") : "No output yet.\n";
   pre.hidden = false;
   pre.scrollTop = pre.scrollHeight;
@@ -371,19 +378,25 @@ async function loadRequests(id, el) {
   renderRequestEmpty(id, el);
 }
 
+function closeRequests(id, el) {
+  openRequests.delete(id);
+  $(".requests", el).hidden = true;
+  $('[data-action="requests"]', el).setAttribute("aria-expanded", "false");
+}
+
 async function toggleRequests(id, el) {
-  const panel = $(".requests", el);
-  const btn = $('[data-action="requests"]', el);
   if (openRequests.has(id)) {
-    openRequests.delete(id);
-    panel.hidden = true;
-    btn.setAttribute("aria-expanded", "false");
+    closeRequests(id, el);
     return;
   }
+  // A card shows one panel at a time.
+  closeLogs(id, el);
   openRequests.add(id);
-  btn.setAttribute("aria-expanded", "true");
+  $('[data-action="requests"]', el).setAttribute("aria-expanded", "true");
   await loadRequests(id, el);
-  panel.hidden = false;
+  // The panel may have been closed while the list was loading.
+  if (!openRequests.has(id)) return;
+  $(".requests", el).hidden = false;
 }
 
 function toggleRequestRow(btn) {
