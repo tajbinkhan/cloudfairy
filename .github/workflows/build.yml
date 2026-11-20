@@ -122,7 +122,12 @@ jobs:
           # Only tag pushes publish a (draft) release; other runs just keep the artifacts.
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: Cloudfairy ${{ github.ref_name }}
-          releaseBody: Installers for Windows, macOS (universal) and Linux are attached below.
+          releaseBody: |
+            Installers for Windows, macOS (universal) and Linux are attached below.
+
+            **macOS:** Cloudfairy isn't notarized by Apple yet, so macOS blocks the first launch. Open the app once and click Done, then go to System Settings → Privacy & Security and click **Open Anyway** next to the Cloudfairy message. If macOS says the app is damaged, run `xattr -dr com.apple.quarantine /Applications/Cloudfairy.app` and open it again.
+
+            **Windows:** the installer isn't code-signed yet. If SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway**.
           releaseDraft: true
           # latest.json is what installed copies read to find updates.
           uploadUpdaterJson: true

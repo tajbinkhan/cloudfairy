@@ -313,6 +313,12 @@
             </tbody>
           </table>
         </div>
+        <h3>Opening it the first time on macOS</h3>
+        <p>Cloudfairy isn't notarized by Apple yet, so macOS blocks the first launch. Open the app once and click Done. Then go to System Settings → Privacy &amp; Security, scroll to Security, and click Open Anyway next to the Cloudfairy message. You only do this once.</p>
+        <p>If macOS says the app is damaged, run this in Terminal and open it again:</p>
+        <pre><code>xattr -dr com.apple.quarantine /Applications/Cloudfairy.app</code></pre>
+        <h3>Opening it the first time on Windows</h3>
+        <p>The installer isn't code-signed yet, so SmartScreen may say “Windows protected your PC”. Click More info, then Run anyway.</p>
         <h3>Build from source</h3>
         <p>You need <a href="https://rustup.rs">Rust</a> and <a href="https://nodejs.org">Node.js</a> 18 or newer.</p>
         <pre><code>git clone https://github.com/tajbinkhan/cloudfairy.git
@@ -349,11 +355,36 @@ npm run build</code></pre>
         <p>More answers are in the <a href="https://github.com/tajbinkhan/cloudfairy#troubleshooting">troubleshooting guide</a>.</p>
       </div>
     </section>
+
+    <section id="code-signing">
+      <div class="wrap">
+        <h2>Code signing policy</h2>
+        <p>Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a>. Cloudfairy has applied to the SignPath Foundation program. Until it is accepted, the Windows installers are unsigned.</p>
+        <p>Signed files are built by GitHub Actions from the <a href="https://github.com/tajbinkhan/cloudfairy">source repository</a>. Each release is approved by hand before it's signed.</p>
+        <ul>
+          <li>Committers and reviewers: <a href="https://github.com/tajbinkhan">Tajbin Khan</a></li>
+          <li>Approvers: <a href="https://github.com/tajbinkhan">Tajbin Khan</a></li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="privacy">
+      <div class="wrap">
+        <h2>Privacy policy</h2>
+        <p>Cloudfairy doesn't collect personal data and has no analytics or telemetry. It talks to these servers, and only for these reasons:</p>
+        <ul>
+          <li><strong>GitHub</strong>, when Cloudfairy opens, to check for a newer version. If you accept an update, it downloads the installer from GitHub Releases.</li>
+          <li><strong>GitHub</strong>, when you click to download cloudflared, to fetch the official cloudflared release.</li>
+          <li><strong>Cloudflare</strong>, when you start a tunnel. cloudflared connects to Cloudflare and forwards requests from your public link to your local server. Cloudflare's <a href="https://www.cloudflare.com/privacypolicy/">privacy policy</a> covers that traffic.</li>
+        </ul>
+        <p>Your tunnels and settings are stored only on your computer. The request list stays in memory and is gone when you quit.</p>
+      </div>
+    </section>
   </main>
 
   <footer>
     <div class="wrap">
-      <span>Cloudfairy by <a href="https://github.com/tajbinkhan">Tajbin Khan</a>.</span>
+      <span>Cloudfairy by <a href="https://github.com/tajbinkhan">Tajbin Khan</a>. <a href="https://github.com/tajbinkhan/cloudfairy/blob/main/LICENSE">MIT License</a>. <a href="#code-signing">Code signing policy</a>. <a href="#privacy">Privacy</a>.</span>
       <span>Not affiliated with Cloudflare, Inc. Cloudflare is a trademark of Cloudflare, Inc.</span>
     </div>
   </footer>

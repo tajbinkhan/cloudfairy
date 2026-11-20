@@ -26,6 +26,7 @@
     "url": "https://github.com/tajbinkhan/cloudfairy/issues"
   },
   "author": "Tajbin Khan",
+  "license": "MIT",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
