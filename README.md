@@ -45,6 +45,32 @@ Get the installer for your OS from [GitHub Releases](https://github.com/tajbinkh
 
 You don't need to install `cloudflared` first. If Cloudfairy can't find it, one click downloads the official release.
 
+### First launch on macOS
+
+Cloudfairy isn't notarized by Apple yet (that needs a paid Apple Developer account), so macOS
+blocks it the first time you open it. You only do this once. Later updates from inside the app
+open normally.
+
+1. Open the `.dmg` and drag Cloudfairy into Applications.
+2. Open Cloudfairy. macOS says it can't verify the app. Click **Done**.
+3. Open **System Settings → Privacy & Security**, scroll to **Security**, and click
+   **Open Anyway** next to the Cloudfairy message. Enter your password, then click **Open Anyway** again.
+
+On macOS 14 Sonoma and older you can instead Control-click Cloudfairy in Applications, choose
+**Open**, then click **Open**.
+
+If macOS says Cloudfairy "is damaged and can't be opened" (releases up to v0.1.6 show this),
+remove the download quarantine flag in Terminal, then open the app again:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Cloudfairy.app
+```
+
+### First launch on Windows
+
+The Windows installers aren't code-signed yet, so SmartScreen may show "Windows protected your
+PC". Click **More info**, then **Run anyway**.
+
 ## Features
 
 - **Several tunnels at once**, each with its own Start/Stop button, status, uptime and request count. Start all or Stop all with one click.
@@ -166,8 +192,13 @@ public key is `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`. If the ke
 installed copies can't update anymore, so keep a backup. To build signed installers locally,
 set `TAURI_SIGNING_PRIVATE_KEY` to the key file's path before `npm run build`.
 
-For apps you distribute, also set up code signing: Apple notarization on macOS, and a
-signing certificate on Windows so SmartScreen doesn't warn users. See the Tauri distribution docs.
+**macOS signing.** The macOS app is ad-hoc signed (`bundle.macOS.signingIdentity: "-"` in
+`tauri.conf.json`). That needs no Apple account, and it turns Gatekeeper's "is damaged" error
+into the "can't verify" prompt that users can get past with **Open Anyway**. Removing that prompt
+entirely needs a Developer ID certificate and notarization (Apple Developer Program, $99 a year).
+
+**Windows signing.** The installers aren't Authenticode-signed yet, so SmartScreen warns on
+first run.
 
 </details>
 
@@ -185,6 +216,7 @@ starts a server on that port and checks that the warning clears. It fetches the 
 
 ## Troubleshooting
 
+- **macOS won't open Cloudfairy, or says it's damaged**: see [First launch on macOS](#first-launch-on-macos).
 - **"429 Too Many Requests"**: Cloudflare limits how often quick tunnels can be created. Wait a minute and press Retry.
 - **The tunnel fails right away and you have `~/.cloudflared/config.yml`**: cloudflared doesn't support quick tunnels while a config file exists. Rename the file while you use quick tunnels.
 - **It never reaches "Live" on an office or school network**: set the protocol to HTTP/2 in Settings.
@@ -192,3 +224,41 @@ starts a server on that port and checks that the warning clears. It fetches the 
 - **Vite / webpack dev server says "Blocked request" or "Invalid Host header"**: open the tunnel's Edit dialog and turn on "Send the local address as the Host header". You can instead add `.trycloudflare.com` to the dev server's allowed hosts (for Vite, `server.allowedHosts`). Use that option if your app builds links or redirects from the Host header, because the rewrite makes them point at `localhost`.
 
 Quick tunnels are meant for testing and sharing. They have no uptime guarantee, and the URL changes every time you start one.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org). Cloudfairy has applied to the SignPath Foundation
+program. Until it is accepted, the Windows installers are unsigned.
+
+Signed files are built by GitHub Actions from this repository's source. Each release is
+approved by hand before it's signed.
+
+| Role | Members |
+|---|---|
+| Committers and reviewers | [Tajbin Khan](https://github.com/tajbinkhan) |
+| Approvers | [Tajbin Khan](https://github.com/tajbinkhan) |
+
+All team members use multi-factor authentication on GitHub and SignPath.
+
+## Privacy policy
+
+Cloudfairy doesn't collect personal data and has no analytics or telemetry. It talks to these
+servers, and only for these reasons:
+
+- **GitHub** (`github.com`), when Cloudfairy opens, to read
+  [`latest.json`](https://github.com/tajbinkhan/cloudfairy/releases/latest/download/latest.json)
+  and check for a newer version. If you accept an update, it downloads the installer from
+  GitHub Releases.
+- **GitHub**, when you click to download cloudflared, to fetch the official cloudflared release
+  from [cloudflare/cloudflared](https://github.com/cloudflare/cloudflared/releases).
+- **Cloudflare**, when you start a tunnel. cloudflared connects to Cloudflare and forwards
+  requests from your public link to your local server. Cloudflare's
+  [privacy policy](https://www.cloudflare.com/privacypolicy/) covers that traffic.
+
+Your tunnels and settings are stored only on your computer. The request list stays in memory
+and is gone when you quit.
+
+## License
+
+[MIT](LICENSE)

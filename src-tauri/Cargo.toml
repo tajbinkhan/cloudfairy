@@ -3,6 +3,7 @@ name = "cloudfairy"
 version = "0.1.6"
 description = "Desktop app (GUI) for Cloudflare quick tunnels: share localhost with a public trycloudflare.com link"
 authors = ["Tajbin Khan"]
+license = "MIT"
 homepage = "https://tajbinkhan.github.io/cloudfairy/"
 repository = "https://github.com/tajbinkhan/cloudfairy"
 readme = "../README.md"
