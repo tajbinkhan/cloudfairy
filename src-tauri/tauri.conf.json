@@ -27,6 +27,7 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "publisher": "Tajbin Khan",
     "category": "DeveloperTool",
     "shortDescription": "Share a local port to the internet with Cloudflare quick tunnels",
     "longDescription": "Cloudfairy is a desktop app for Cloudflare quick tunnels. Type a local port and get a public https://….trycloudflare.com link, without running cloudflared in a terminal. Run several tunnels at once, copy the link or show a QR code, and watch live cloudflared logs. No Cloudflare account needed.",

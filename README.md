@@ -45,6 +45,19 @@ Get the installer for your OS from [GitHub Releases](https://github.com/tajbinkh
 
 You don't need to install `cloudflared` first. If Cloudfairy can't find it, one click downloads the official release.
 
+### Install with a package manager
+
+| Platform | Command |
+|---|---|
+| Windows ([winget](https://learn.microsoft.com/windows/package-manager/)) | `winget install TajbinKhan.Cloudfairy` |
+| macOS ([Homebrew](https://brew.sh)) | `brew install --cask tajbinkhan/tap/cloudfairy` |
+| Arch Linux ([AUR](https://aur.archlinux.org/packages/cloudfairy-bin)) | `yay -S cloudfairy-bin`, or any other AUR helper |
+
+On Windows and macOS the app still updates itself, and `winget upgrade` and `brew upgrade`
+work too. An AUR install doesn't update itself, so update it with your AUR helper.
+Homebrew downloads count as downloads from the internet, so the first launch on macOS still
+needs the steps below.
+
 ### First launch on macOS
 
 Cloudfairy isn't notarized by Apple yet (that needs a paid Apple Developer account), so macOS
@@ -135,6 +148,7 @@ ui/ (HTML/CSS/JS) ──invoke──▶ src-tauri/src/main.rs (commands)
 | `src-tauri/src/main.rs` | Tauri commands and app setup; kills all tunnels on exit |
 | `src-tauri/src/background.rs` | Tray icon and menu, notifications, copying new links, starting tunnels on launch |
 | `ui/` | The interface. Plain HTML/CSS/JS, no bundler. Follows the system light/dark theme. |
+| `packaging/` | winget, Homebrew and AUR templates. [`packages.yml`](.github/workflows/packages.yml) publishes each release to them. See [`packaging/README.md`](packaging/README.md). |
 | `site/` | The project website (landing page, `robots.txt`, `sitemap.xml`, social image). [`pages.yml`](.github/workflows/pages.yml) publishes it to GitHub Pages on every push to `main` that changes it. |
 
 | | Settings | Downloaded `cloudflared` |
