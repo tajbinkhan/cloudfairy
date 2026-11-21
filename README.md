@@ -227,19 +227,21 @@ Quick tunnels are meant for testing and sharing. They have no uptime guarantee, 
 
 ## Code signing policy
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
-[SignPath Foundation](https://signpath.org). Cloudfairy has applied to the SignPath Foundation
-program. Until it is accepted, the Windows installers are unsigned.
+The Windows installers aren't Authenticode-signed, so SmartScreen warns on first run (see
+[First launch on Windows](#first-launch-on-windows)). The macOS app is ad-hoc signed and isn't
+notarized.
 
-Signed files are built by GitHub Actions from this repository's source. Each release is
-approved by hand before it's signed.
+Every release is built by GitHub Actions from a tagged commit in this repository. The build
+signs the installers and `latest.json` with the Tauri update key, and the in-app updater
+refuses any update whose signature doesn't match. Each release starts as a draft and is
+published by hand.
 
 | Role | Members |
 |---|---|
 | Committers and reviewers | [Tajbin Khan](https://github.com/tajbinkhan) |
-| Approvers | [Tajbin Khan](https://github.com/tajbinkhan) |
+| Release approvers | [Tajbin Khan](https://github.com/tajbinkhan) |
 
-All team members use multi-factor authentication on GitHub and SignPath.
+All team members use multi-factor authentication on GitHub.
 
 ## Privacy policy
 

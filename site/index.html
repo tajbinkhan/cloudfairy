@@ -58,7 +58,7 @@
         "image": "https://tajbinkhan.github.io/cloudfairy/og-image.png",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "Windows 10, Windows 11, macOS, Linux",
-        "softwareVersion": "0.1.6",
+        "softwareVersion": "0.1.7",
         "downloadUrl": "https://github.com/tajbinkhan/cloudfairy/releases/latest",
         "codeRepository": "https://github.com/tajbinkhan/cloudfairy",
         "programmingLanguage": ["Rust", "JavaScript"],
@@ -359,11 +359,11 @@ npm run build</code></pre>
     <section id="code-signing">
       <div class="wrap">
         <h2>Code signing policy</h2>
-        <p>Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a>. Cloudfairy has applied to the SignPath Foundation program. Until it is accepted, the Windows installers are unsigned.</p>
-        <p>Signed files are built by GitHub Actions from the <a href="https://github.com/tajbinkhan/cloudfairy">source repository</a>. Each release is approved by hand before it's signed.</p>
+        <p>The Windows installers aren't Authenticode-signed, so SmartScreen warns on first run. The macOS app is ad-hoc signed and isn't notarized.</p>
+        <p>Every release is built by GitHub Actions from a tagged commit in the <a href="https://github.com/tajbinkhan/cloudfairy">source repository</a>. The build signs the installers with the Tauri update key, and the in-app updater refuses any update whose signature doesn't match. Each release starts as a draft and is published by hand.</p>
         <ul>
           <li>Committers and reviewers: <a href="https://github.com/tajbinkhan">Tajbin Khan</a></li>
-          <li>Approvers: <a href="https://github.com/tajbinkhan">Tajbin Khan</a></li>
+          <li>Release approvers: <a href="https://github.com/tajbinkhan">Tajbin Khan</a></li>
         </ul>
       </div>
     </section>
