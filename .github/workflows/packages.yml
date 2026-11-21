@@ -20,7 +20,10 @@ permissions:
 
 jobs:
   render:
-    if: ${{ !github.event.release.prerelease }}
+    # Manual runs must use the workflow from main, since the jobs receive secrets.
+    if: >-
+      ${{ !github.event.release.prerelease &&
+      (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -33,9 +36,18 @@ jobs:
       - id: version
         env:
           RAW: ${{ inputs.version || github.event.release.tag_name }}
-        run: echo "version=${RAW#v}" >> "$GITHUB_OUTPUT"
+        # Later steps and jobs put the version into commands, so accept only plain X.Y.Z.
+        run: |
+          version="${RAW#v}"
+          if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$RAW' isn't a version like 0.1.7"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - run: bash packaging/render.sh "${{ steps.version.outputs.version }}" out
+      - env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash packaging/render.sh "$VERSION" out
 
       - uses: actions/upload-artifact@v7
         with:

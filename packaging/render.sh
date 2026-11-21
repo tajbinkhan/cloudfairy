@@ -11,6 +11,11 @@ set -euo pipefail
 
 version="${1:?usage: packaging/render.sh VERSION [OUT_DIR]}"
 version="${version#v}"
+# The version goes into URLs and sed expressions, so accept only plain X.Y.Z.
+if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "render.sh: '$version' isn't a version like 0.1.7" >&2
+  exit 1
+fi
 out="${2:-packaging/out}"
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="tajbinkhan/cloudfairy"
