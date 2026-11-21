@@ -38,6 +38,9 @@ struct Progress {
 
 /// Returns the newer version, if there is one.
 pub async fn check(app: &AppHandle, pending: &PendingUpdate) -> Result<Option<AppUpdate>, String> {
+    if !can_self_update() {
+        return Ok(None);
+    }
     let update = app
         .updater()
         .map_err(|e| e.to_string())?
@@ -51,6 +54,35 @@ pub async fn check(app: &AppHandle, pending: &PendingUpdate) -> Result<Option<Ap
     });
     *pending.lock() = update;
     Ok(view)
+}
+
+/// Whether the in-app updater may replace this copy. On Linux the `.deb` and `.rpm` updates
+/// run `dpkg -i` or `rpm -U`. That is wrong when another package manager installed the files,
+/// such as pacman for the AUR package, which repackages the `.deb`. So the updater only runs
+/// when dpkg or rpm owns the executable. Package managers update those copies instead.
+#[cfg(target_os = "linux")]
+fn can_self_update() -> bool {
+    use std::process::{Command, Stdio};
+    use tauri::utils::{config::BundleType, platform::bundle_type};
+
+    let (tool, owns_file) = match bundle_type() {
+        Some(BundleType::Deb) => ("dpkg", "-S"),
+        Some(BundleType::Rpm) => ("rpm", "-qf"),
+        _ => return true,
+    };
+    let Ok(exe) = std::env::current_exe() else { return false };
+    Command::new(tool)
+        .arg(owns_file)
+        .arg(exe)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn can_self_update() -> bool {
+    true
 }
 
 /// Downloads and verifies the update found by [`check`], reporting progress to the UI.
