@@ -160,6 +160,8 @@ struct SettingsView {
     launch_at_login: bool,
     /// False where the OS has no tray, so the window hides that option.
     tray_available: bool,
+    /// The running build's version, from tauri.conf.json.
+    app_version: String,
 }
 
 #[tauri::command]
@@ -173,6 +175,7 @@ fn get_settings(app: AppHandle, state: State<AppState>) -> SettingsView {
         copy_on_live: s.copy_on_live,
         launch_at_login: app.autolaunch().is_enabled().unwrap_or(false),
         tray_available: background::has_tray(&app),
+        app_version: app.package_info().version.to_string(),
     }
 }
 

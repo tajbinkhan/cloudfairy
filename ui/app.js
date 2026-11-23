@@ -740,6 +740,7 @@ async function openSettings() {
   $("#launch-at-login").checked = s.launchAtLogin;
   $("#notify").checked = s.notify;
   $("#copy-on-live").checked = s.copyOnLive;
+  $("#app-version").textContent = `Cloudfairy ${s.appVersion}`;
   $("#settings-error").textContent = "";
   $("#settings-dialog").showModal();
   refreshCloudflared();

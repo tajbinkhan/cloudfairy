@@ -363,6 +363,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .dialog form { padding: 22px; display: flex; flex-direction: column; gap: 16px; }
 .dialog h2 { font-size: 17px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.app-version { margin-right: auto; align-self: center; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 
 .cf-box { border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .cf-box-row { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
