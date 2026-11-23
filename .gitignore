@@ -6,6 +6,3 @@ src-tauri/gen/schemas/
 # graphify: machine-specific paths (local Python and project root)
 graphify-out/.graphify_python
 graphify-out/.graphify_root
-
-# Output of packaging/render.sh
-packaging/out/
