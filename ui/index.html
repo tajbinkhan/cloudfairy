@@ -6,6 +6,14 @@
   <title>Cloudfairy</title>
   <meta name="description" content="Cloudfairy: desktop app for Cloudflare quick tunnels. Share a local port with a public trycloudflare.com link." />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="request-tools.css" />
+  <link rel="stylesheet" href="lifecycle.css" />
+  <link rel="stylesheet" href="extras.css" />
+  <link rel="stylesheet" href="named.css" />
+  <link rel="stylesheet" href="ports.css" />
+  <link rel="stylesheet" href="folder.css" />
+  <link rel="stylesheet" href="sparkline.css" />
+  <link rel="stylesheet" href="proxy.css" />
 </head>
 <body>
   <header class="topbar">
@@ -54,7 +62,12 @@
           <span>Name <em>(optional)</em></span>
           <input id="name" name="name" placeholder="My app" />
         </label>
+        <label class="field" id="domain-field" hidden>
+          <span>Your domain <em>(optional)</em></span>
+          <input id="hostname" name="hostname" placeholder="app.example.com" spellcheck="false" />
+        </label>
         <button class="btn primary" type="submit">Create tunnel</button>
+        <button id="share-folder" class="btn" type="button">Share a folder</button>
       </div>
       <p id="composer-error" class="form-error" role="alert"></p>
     </form>
@@ -108,6 +121,24 @@
       <p id="settings-error" class="form-error" role="alert"></p>
       <p class="hint">Protocol and path changes apply to tunnels you start after saving.</p>
 
+      <div class="cf-box" id="cf-account">
+        <div class="cf-box-row">
+          <div>
+            <div class="label">Cloudflare account (optional)</div>
+            <div id="account-detail" class="cf-detail">Checking…</div>
+            <div id="account-path" class="cf-path mono"></div>
+          </div>
+          <button id="account-login" class="btn" type="button" hidden>Sign in</button>
+          <button id="account-cancel" class="btn ghost" type="button" hidden>Cancel</button>
+        </div>
+        <p id="account-hint" class="hint"></p>
+        <div id="account-pending" hidden>
+          <p class="hint">Finish signing in in your browser and pick the domain to use. If no browser opened, open this link:</p>
+          <a id="account-url" class="mono account-url" href="#"></a>
+        </div>
+        <p id="account-error" class="form-error" role="alert"></p>
+      </div>
+
       <div class="field-group">
         <div class="label">In the background</div>
         <label class="check" id="close-to-tray-row">
@@ -147,6 +178,29 @@
         <span>Local port or address</span>
         <input id="edit-target" spellcheck="false" />
       </label>
+      <fieldset class="link-kind">
+        <legend class="label">Public link</legend>
+        <label class="check">
+          <input type="radio" name="edit-kind" id="edit-kind-quick" value="quick" />
+          <span>Random trycloudflare.com link</span>
+        </label>
+        <label class="check">
+          <input type="radio" name="edit-kind" id="edit-kind-named" value="named" />
+          <span>My domain</span>
+        </label>
+        <label class="field" id="edit-hostname-field">
+          <span>Hostname</span>
+          <input id="edit-hostname" placeholder="app.example.com" spellcheck="false" aria-describedby="edit-hostname-hint" />
+        </label>
+        <p id="edit-hostname-hint" class="hint"></p>
+      </fieldset>
+      <div class="field" id="edit-folder-row" hidden>
+        <span>Folder</span>
+        <div class="folder-row">
+          <span id="edit-folder" class="folder-path mono"></span>
+          <button id="edit-folder-change" class="btn small" type="button">Change</button>
+        </div>
+      </div>
       <label class="check">
         <input type="checkbox" id="edit-start-on-open" />
         <span>Start when Cloudfairy opens</span>
@@ -159,6 +213,47 @@
         "Blocked request" or "Invalid Host header". Vite and webpack-dev-server do this for hostnames
         they don't know. Leave it off if your app builds links or redirects from the Host header.
         With it on, your server's own host check no longer applies to requests through the link.</p>
+      <div class="field-group">
+        <div class="label">While it runs</div>
+        <label class="check">
+          <input type="checkbox" id="edit-restart" aria-describedby="edit-restart-hint" />
+          <span>Restart if it fails</span>
+        </label>
+        <p id="edit-restart-hint" class="hint check-hint">Waits 5 s, then longer after each failure, up to
+          5 min. Each restart gets a new link.</p>
+        <label class="field">
+          <span>Stop after</span>
+          <select id="edit-stop-after">
+            <option value="0">Don't stop</option>
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60">1 hour</option>
+            <option value="120">2 hours</option>
+            <option value="480">8 hours</option>
+          </select>
+        </label>
+      </div>
+      <div class="field-group">
+        <div class="label">When it gets a new link</div>
+        <div class="lc-row">
+          <label class="field lc-file">
+            <span>Write it to a file <em>(optional)</em></span>
+            <input id="edit-url-file" class="mono" placeholder="Full path, like a .env file" spellcheck="false" />
+          </label>
+          <label class="field lc-var">
+            <span>Variable <em>(optional)</em></span>
+            <input id="edit-url-var" class="mono" placeholder="PUBLIC_URL" spellcheck="false" />
+          </label>
+        </div>
+        <p class="hint">With a variable, Cloudfairy sets that line, like <code>PUBLIC_URL=https://…</code>,
+          and keeps the rest of the file. Without one, the file holds only the link.</p>
+        <label class="field">
+          <span>Run a command <em>(optional)</em></span>
+          <input id="edit-url-command" class="mono" placeholder="curl -d url={url} http://localhost:3000/hook" spellcheck="false" />
+        </label>
+        <p class="hint"><code>{url}</code> and the <code>CLOUDFAIRY_URL</code> variable hold the link. The
+          command runs in your home folder, stops after 60 s, and its output goes to the tunnel's logs.</p>
+      </div>
       <p id="edit-error" class="form-error" role="alert"></p>
       <div class="dialog-actions">
         <button class="btn ghost" value="cancel" type="submit" formnovalidate>Cancel</button>
@@ -178,8 +273,36 @@
     </form>
   </dialog>
 
+  <dialog id="remove-named-dialog" class="dialog">
+    <form method="dialog">
+      <h2>Remove tunnel</h2>
+      <p id="remove-named-text"></p>
+      <label class="check">
+        <input type="checkbox" id="remove-named-delete" aria-describedby="remove-named-hint" />
+        <span>Also delete it from my Cloudflare account</span>
+      </label>
+      <p id="remove-named-hint" class="hint check-hint"></p>
+      <p id="remove-named-error" class="form-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel" type="submit" formnovalidate>Cancel</button>
+        <button class="btn primary" id="remove-named-confirm" type="button">Remove</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" hidden></div>
 
+  <script src="request-tools.js"></script>
+  <!-- Loaded before app.js, which calls into them while it renders. -->
+  <script src="ports.js"></script>
+  <script src="folder.js"></script>
+  <script src="sparkline.js"></script>
   <script src="app.js"></script>
+  <script src="lifecycle.js"></script>
+  <script src="shortcuts.js"></script>
+  <script src="transfer.js"></script>
+  <script src="remote.js"></script>
+  <script src="named.js"></script>
+  <script src="proxy.js"></script>
 </body>
 </html>

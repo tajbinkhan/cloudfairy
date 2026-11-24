@@ -9,7 +9,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TunnelConfig {
     pub id: String,
@@ -23,6 +23,45 @@ pub struct TunnelConfig {
     /// Start this tunnel when Cloudfairy opens.
     #[serde(default)]
     pub start_on_open: bool,
+    /// Restart, stop timer and what to do with each new link.
+    #[serde(default)]
+    pub lifecycle: crate::lifecycle::LifecycleConfig,
+    /// Set for a tunnel on the user's own domain. `None` is a quick tunnel.
+    #[serde(default)]
+    pub named: Option<crate::named::NamedTunnel>,
+    /// What the tunnel points at. Tunnels saved before folder sharing are addresses.
+    #[serde(default)]
+    pub kind: TunnelKind,
+    /// The shared folder when `kind` is `Folder`. `target` is empty for these tunnels.
+    #[serde(default)]
+    pub folder: Option<String>,
+    /// Basic auth on the public link. An empty password turns it off. Needs the proxy.
+    #[serde(default)]
+    pub auth_user: String,
+    #[serde(default)]
+    pub auth_password: String,
+    /// Answer CORS preflight requests and add `Access-Control-Allow-*` headers. Needs the proxy.
+    #[serde(default)]
+    pub cors: bool,
+    /// Headers added to every response. Needs the proxy.
+    #[serde(default)]
+    pub extra_headers: Vec<HeaderPair>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TunnelKind {
+    /// A local address such as `http://localhost:3000`.
+    #[default]
+    Address,
+    /// A folder Cloudfairy serves read-only while the tunnel runs.
+    Folder,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HeaderPair {
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -39,6 +78,13 @@ pub struct Settings {
     pub notify: bool,
     /// Copy a tunnel's link to the clipboard when it goes live.
     pub copy_on_live: bool,
+    /// Origin certificate path that `cloudflared tunnel login` reported. `None` means
+    /// cloudflared's default locations.
+    #[serde(default)]
+    pub origin_cert: Option<String>,
+    /// Send tunnel traffic through Cloudfairy's local proxy (see `proxy.rs`), which records
+    /// requests with bodies and adds password protection, CORS and extra headers.
+    pub route_through_proxy: bool,
 }
 
 impl Default for Settings {
@@ -50,6 +96,8 @@ impl Default for Settings {
             close_to_tray: true,
             notify: true,
             copy_on_live: false,
+            origin_cert: None,
+            route_through_proxy: true,
         }
     }
 }
@@ -111,5 +159,57 @@ mod tests {
         assert!(s.close_to_tray && s.notify && !s.copy_on_live);
         let t = &s.tunnels[0];
         assert!(!t.rewrite_host && !t.start_on_open);
+        assert_eq!(t.lifecycle, crate::lifecycle::LifecycleConfig::default());
+        assert!(t.named.is_none() && s.origin_cert.is_none());
+        assert_eq!(t.kind, TunnelKind::Address);
+        assert!(t.folder.is_none());
+        assert!(s.route_through_proxy, "the proxy is on for existing installs");
+        assert!(t.auth_user.is_empty() && t.auth_password.is_empty() && !t.cors && t.extra_headers.is_empty());
+    }
+
+    #[test]
+    fn lifecycle_options_round_trip() {
+        let json = r#"{"tunnels":[{"id":"t1","name":"App","target":"http://localhost:3000",
+            "lifecycle":{"restartOnFailure":true,"stopAfterMinutes":30,"urlFile":"/app/.env",
+            "urlFileVar":"PUBLIC_URL","urlCommand":"echo {url}"}},
+            {"id":"t2","name":"B","target":"http://localhost:4000","lifecycle":{"stopAfterMinutes":15}}]}"#;
+        let s: Settings = serde_json::from_str(json).unwrap();
+        let l = &s.tunnels[0].lifecycle;
+        assert!(l.restart_on_failure);
+        assert_eq!((l.stop_after_minutes, l.url_file.as_str()), (30, "/app/.env"));
+        assert_eq!((l.url_file_var.as_str(), l.url_command.as_str()), ("PUBLIC_URL", "echo {url}"));
+        let partial = &s.tunnels[1].lifecycle;
+        assert!(!partial.restart_on_failure && partial.url_command.is_empty());
+        let again: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(&again.tunnels[0].lifecycle, l);
+    }
+
+    #[test]
+    fn folder_tunnels_round_trip() {
+        let json = r#"{"tunnels":[{"id":"t2","name":"Photos","target":"",
+            "kind":"folder","folder":"/home/me/Photos"}]}"#;
+        let s: Settings = serde_json::from_str(json).unwrap();
+        let t = &s.tunnels[0];
+        assert_eq!(t.kind, TunnelKind::Folder);
+        assert_eq!(t.folder.as_deref(), Some("/home/me/Photos"));
+        let again: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(again.tunnels[0].kind, TunnelKind::Folder);
+    }
+
+    #[test]
+    fn proxy_options_round_trip() {
+        let t = TunnelConfig {
+            id: "t1".into(),
+            auth_user: "me".into(),
+            auth_password: "pw".into(),
+            cors: true,
+            extra_headers: vec![HeaderPair { name: "X-Test".into(), value: "1".into() }],
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(json.contains(r#""authPassword":"pw""#));
+        assert!(json.contains(r#""extraHeaders":[{"name":"X-Test","value":"1"}]"#));
+        let back: TunnelConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!((back.cors, back.extra_headers), (true, t.extra_headers));
     }
 }

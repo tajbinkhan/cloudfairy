@@ -1,0 +1,20 @@
+/* Restart, stop timer and new-link options (lifecycle.js). */
+
+/* Failed, and waiting to restart. */
+.card[data-status="restarting"] { border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
+.card[data-status="restarting"] .dot { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
+.card[data-status="restarting"] .status { color: var(--warn); }
+
+.lc-timer { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; padding-left: 6px; }
+.lc-note { background: var(--surface-2); color: var(--muted); }
+.lc-note.lc-warn { background: var(--warn-bg); color: var(--warn); }
+
+.lc-row { display: flex; gap: 12px; }
+.lc-file { flex: 1; min-width: 0; }
+.lc-var { width: 150px; }
+.field input:disabled { opacity: 0.55; }
+
+@media (max-width: 680px) {
+  .lc-row { flex-direction: column; }
+  .lc-var { width: auto; }
+}

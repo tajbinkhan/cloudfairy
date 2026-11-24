@@ -141,6 +141,7 @@ function cardTemplate(t) {
         <span class="requests-note">Newest first. Click a request to see its headers.</span>
         <button class="btn ghost small" type="button" data-action="clear-requests">Clear</button>
       </div>
+      ${requestFilterHtml()}
       <p class="requests-empty"></p>
       <ol class="req-list"></ol>
     </section>`;
@@ -160,9 +161,11 @@ function renderCard(t) {
   const active = t.status === "starting" || t.status === "running";
   el.dataset.status = visualStatus(t);
   $(".card-name", el).textContent = t.name;
-  const tags = [t.target];
+  const tags = [t.kind === "folder" ? t.folder : t.target];
   if (t.startOnOpen) tags.push("Starts with Cloudfairy");
   if (t.rewriteHost) tags.push("Host rewritten");
+  if (t.named) tags.push(t.named.hostname);
+  tags.push(...(window.proxyUi?.cardTags(t) ?? []));
   $(".card-target", el).textContent = tags.join(" · ");
   $(".status-text", el).textContent = statusText(t);
 
@@ -191,12 +194,14 @@ function renderCard(t) {
 
   renderStats(t, el);
   $('[data-action="edit"]', el).disabled = active;
+  window.lifecycleUi?.render(t, el);
   updateEmpty();
 }
 
 const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 
 function renderStats(t, el) {
+  window.cfSparkline?.render(t, el);
   const stats = $(".card-stats", el);
   stats.hidden = t.status !== "running";
   if (stats.hidden) return;
@@ -207,7 +212,9 @@ function renderStats(t, el) {
     : "No requests yet";
 }
 
-const isActive = (t) => t.status === "starting" || t.status === "running";
+// A failed tunnel waiting to restart counts as active, so Stop cancels the restart.
+const isActive = (t) =>
+  t.status === "starting" || t.status === "running" || Boolean(window.lifecycleUi?.restartPending(t.id));
 
 function updateEmpty() {
   $("#empty").hidden = tunnels.size > 0;
@@ -335,6 +342,8 @@ function requestRowHtml(e, live) {
     <div class="req-detail" hidden>
       <dl>${dl(facts)}</dl>
       ${e.headers.length ? `<h4>Request headers</h4><dl class="req-headers">${dl(e.headers)}</dl>` : ""}
+      ${requestCurlHtml(e)}
+      ${window.proxyUi?.detailHtml(e) ?? ""}
     </div>`;
 }
 
@@ -365,6 +374,7 @@ function upsertRequest(id, entry) {
     while (list.childElementCount > MAX_REQUEST_ROWS) list.lastElementChild.remove();
   }
   renderRequestEmpty(id, el);
+  applyRequestFilter(id, el, [entry]);
 }
 
 async function loadRequests(id, el) {
@@ -376,6 +386,7 @@ async function loadRequests(id, el) {
     .map((e) => `<li data-req="${e.id}">${requestRowHtml(e, live)}</li>`)
     .join("");
   renderRequestEmpty(id, el);
+  applyRequestFilter(id, el, entries);
 }
 
 function closeRequests(id, el) {
@@ -410,6 +421,7 @@ async function clearRequests(id, el) {
   await invoke("clear_tunnel_requests", { id }).catch((e) => toast(errText(e)));
   $(".req-list", el).innerHTML = "";
   renderRequestEmpty(id, el);
+  applyRequestFilter(id, el);
 }
 
 async function startTunnel(id) {
@@ -435,6 +447,8 @@ async function startTunnel(id) {
 
 const pendingRemove = new Map();
 async function removeTunnel(id, btn) {
+  // Named tunnels ask whether to delete them from the Cloudflare account too (named.js).
+  if (tunnels.get(id)?.named?.tunnelId) return removeNamedTunnel(id);
   if (!pendingRemove.has(id)) {
     $("span", btn).textContent = "Click again to remove";
     btn.classList.add("danger");
@@ -473,7 +487,7 @@ async function onCardClick(ev) {
 
   switch (target.dataset.action) {
     case "toggle":
-      if (t.status === "starting" || t.status === "running") {
+      if (isActive(t)) {
         await invoke("stop_tunnel", { id });
       } else {
         await startTunnel(id);
@@ -544,7 +558,7 @@ async function onCreate(ev) {
   const name = $("#name").value;
   let view;
   try {
-    view = await invoke("add_tunnel", { name, target });
+    view = await addTunnelFromComposer(name, target);
   } catch (e) {
     errorEl.textContent = errText(e);
     $("#target").focus();
@@ -566,12 +580,19 @@ function openEdit(t) {
   $("#edit-target").value = t.target;
   $("#edit-rewrite-host").checked = Boolean(t.rewriteHost);
   $("#edit-start-on-open").checked = Boolean(t.startOnOpen);
+  window.lifecycleUi?.fill(t);
+  fillLinkFields(t);
   $("#edit-error").textContent = "";
+  window.cfFolder?.openEdit(t);
+  window.proxyUi?.fillEdit(t);
   $("#edit-dialog").showModal();
 }
 
 async function saveEdit() {
+  if (await window.cfFolder?.saveEdit(editingId)) return;
   try {
+    await window.lifecycleUi?.save(editingId);
+    await saveLinkFields(editingId);
     const view = await invoke("update_tunnel", {
       id: editingId,
       name: $("#edit-name").value,
@@ -579,6 +600,7 @@ async function saveEdit() {
       rewriteHost: $("#edit-rewrite-host").checked,
       startOnOpen: $("#edit-start-on-open").checked,
     });
+    Object.assign(view, await window.proxyUi?.saveEdit(view.id));
     Object.assign(tunnels.get(view.id), view);
     renderCard(tunnels.get(view.id));
     $("#edit-dialog").close();
@@ -742,8 +764,10 @@ async function openSettings() {
   $("#copy-on-live").checked = s.copyOnLive;
   $("#app-version").textContent = `Cloudfairy ${s.appVersion}`;
   $("#settings-error").textContent = "";
+  window.proxyUi?.fillSettings();
   $("#settings-dialog").showModal();
   refreshCloudflared();
+  refreshAccount();
 }
 
 async function saveSettings() {
@@ -758,6 +782,7 @@ async function saveSettings() {
         copyOnLive: $("#copy-on-live").checked,
       },
     });
+    await window.proxyUi?.saveSettings();
     await refreshCloudflared();
     if (cfInfo.problem && $("#cf-custom").value.trim()) {
       $("#settings-error").textContent = cfInfo.problem;

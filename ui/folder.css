@@ -1,0 +1,12 @@
+/* Folder tunnels in the Edit dialog (folder.js). */
+.folder-row { display: flex; align-items: center; gap: 8px; }
+.folder-path {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}

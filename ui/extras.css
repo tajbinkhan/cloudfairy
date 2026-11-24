@@ -1,0 +1,31 @@
+/* Styles for shortcuts.js, transfer.js and remote.js. */
+
+/* Tunnel cards take keyboard focus. */
+.card:focus { outline: none; }
+.card:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.shortcut-list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 18px;
+  margin: 0;
+}
+.shortcut-list dt { white-space: nowrap; color: var(--muted); font-size: 12px; }
+.shortcut-list dd { margin: 0; }
+
+kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: center;
+}
+
+.transfer-actions { display: flex; flex-wrap: wrap; gap: 8px; }

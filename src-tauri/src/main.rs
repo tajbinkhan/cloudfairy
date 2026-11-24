@@ -3,17 +3,31 @@
 
 mod app_update;
 mod background;
+mod capture;
 mod child_guard;
+mod cli;
 mod cloudflared;
+mod composer;
+mod deep_link;
+mod har;
+mod lifecycle;
+mod link_hooks;
+mod named;
+mod ports;
+mod remote;
+mod proxy;
+mod proxy_cmds;
 mod requests;
 mod settings;
+mod share;
+mod transfer;
 mod tunnel;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use app_update::{AppUpdate, PendingUpdate};
 use serde::Serialize;
-use settings::{SettingsStore, TunnelConfig};
+use settings::{SettingsStore, TunnelConfig, TunnelKind};
 use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -61,6 +75,7 @@ fn add_tunnel(app: AppHandle, state: State<AppState>, name: String, target: Stri
         target,
         rewrite_host: false,
         start_on_open: false,
+        ..Default::default()
     };
     state.settings.update(|s| s.tunnels.push(cfg.clone()))?;
     background::refresh_tray(&app);
@@ -122,15 +137,20 @@ async fn start_one(app: &AppHandle, id: &str) -> CmdResult<TunnelView> {
         .cloned()
         .ok_or("Tunnel not found.")?;
     let (bin, _) = cloudflared::resolve(app, settings.cloudflared_path.as_deref())?;
+    if cfg.kind == TunnelKind::Folder {
+        share::start(app, &state.tunnels, &cfg, &bin, &settings.protocol, settings.route_through_proxy).await?;
+        return Ok(state.tunnels.view(cfg));
+    }
     state
         .tunnels
-        .start(app, &cfg, &bin, &settings.protocol)
+        .start(app, &cfg, &bin, &settings.protocol, settings.route_through_proxy)
         .await?;
     Ok(state.tunnels.view(cfg))
 }
 
 #[tauri::command]
-fn stop_tunnel(state: State<AppState>, id: String) {
+fn stop_tunnel(app: AppHandle, state: State<AppState>, id: String) {
+    lifecycle::cancel(&app, &id);
     state.tunnels.stop(&id);
 }
 
@@ -291,9 +311,13 @@ fn main() {
     let app = tauri::Builder::default()
         // Must be first. A second copy would keep its own list of tunnels and overwrite
         // settings.json, so it exits and brings this window to the front instead.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             background::show_window(app);
+            // `cloudfairy start 3000`, or a cloudfairy:// link on Windows and Linux.
+            remote::handle_args(app, &args);
         }))
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
@@ -303,6 +327,7 @@ fn main() {
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PendingUpdate::default())
+        .manage(remote::Inbox::default())
         .setup(|app| {
             // Kills cloudflared left running by a session that crashed.
             child_guard::init(&app.path().app_data_dir()?);
@@ -317,9 +342,11 @@ fn main() {
                 settings: SettingsStore::load(config_dir.join("settings.json")),
                 tunnels,
             });
+            app.manage(lifecycle::Lifecycles::default());
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(change) = rx.recv().await {
+                    lifecycle::on_change(&handle, &change);
                     background::on_change(&handle, change);
                 }
             });
@@ -332,6 +359,7 @@ fn main() {
                 background::show_window(app.handle());
             }
             background::start_on_open(app.handle());
+            remote::init(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -356,6 +384,7 @@ fn main() {
             tunnel_logs,
             tunnel_requests,
             clear_tunnel_requests,
+            har::export_har,
             get_settings,
             save_settings,
             cloudflared_info,
@@ -366,6 +395,27 @@ fn main() {
             open_url,
             copy_text,
             qr_svg,
+            lifecycle::set_tunnel_lifecycle,
+            lifecycle::lifecycle_states,
+            transfer::export_tunnels,
+            transfer::import_tunnels,
+            remote::take_remote_items,
+            remote::answer_link_request,
+            named::cloudflare_account,
+            named::cloudflare_login,
+            named::cloudflare_login_cancel,
+            named::add_named_tunnel,
+            named::set_tunnel_hostname,
+            named::remove_named_tunnel,
+            composer::suggest_ports,
+            composer::pick_folder,
+            composer::add_folder_tunnel,
+            composer::update_folder_tunnel,
+            proxy_cmds::request_body,
+            proxy_cmds::replay_request,
+            proxy_cmds::update_tunnel_proxy,
+            proxy_cmds::get_proxy_settings,
+            proxy_cmds::save_proxy_settings,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Cloudfairy");
