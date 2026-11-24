@@ -246,6 +246,12 @@ fn build_client(scheme: &str, host: &str) -> Result<Client<Connector, ProxyBody>
     http.enforce_http(false);
     http.set_nodelay(true);
     http.set_connect_timeout(Some(Duration::from_secs(10)));
+    if tunnel::is_loopback(host) {
+        // `localhost` resolves to ::1 first. On Windows a refused ::1 connection hangs for
+        // about 2 s, so the default 300 ms wait before trying 127.0.0.1 slowed every new
+        // connection to a server that listens on IPv4 only. Loopback answers in well under 10 ms.
+        http.set_happy_eyeballs_timeout(Some(Duration::from_millis(10)));
+    }
     let https = hyper_rustls::HttpsConnectorBuilder::new()
         .with_tls_config(tls_config(scheme == "https" && !tunnel::is_loopback(host))?)
         .https_or_http()

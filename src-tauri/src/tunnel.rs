@@ -472,8 +472,12 @@ impl Tunnels {
             return;
         }
 
-        if let Some(entry) = rt.requests.handle_line(&line, now_ms()) {
-            let _ = app.emit(EVENT_REQUEST, RequestEvent { id, entry: &entry });
+        // When the proxy records this run, its list is the one the window shows. The log-based
+        // list numbers entries from 1 too, so its events would overwrite the proxy's entries.
+        if rt.capture.is_none() {
+            if let Some(entry) = rt.requests.handle_line(&line, now_ms()) {
+                let _ = app.emit(EVENT_REQUEST, RequestEvent { id, entry: &entry });
+            }
         }
         // Debug lines are only read for requests. They're left out of the log view because
         // they're noisy and carry visitors' headers, cookies included.
@@ -777,9 +781,15 @@ pub(crate) fn is_loopback(host: &str) -> bool {
 async fn probe_local(target: &str) -> Option<String> {
     let (host, port) = host_port(target)?;
     let addr = format!("{host}:{port}");
-    let connect = tokio::net::TcpStream::connect(addr.clone());
+    // Try every address at once. `localhost` resolves to ::1 first, and on Windows a refused
+    // connection there takes about 2 s, which used up the timeout before 127.0.0.1 was tried.
+    let connect = async {
+        let addrs: Vec<_> = tokio::net::lookup_host(addr.clone()).await?.collect();
+        let attempts = addrs.into_iter().map(|a| Box::pin(tokio::net::TcpStream::connect(a)));
+        futures_util::future::select_ok(attempts).await.map(|_| ())
+    };
     match tokio::time::timeout(Duration::from_millis(800), connect).await {
-        Ok(Ok(_)) => None,
+        Ok(Ok(())) => None,
         _ => Some(format!(
             "Nothing is answering on {addr} yet. The public URL will show an error page until your local server is running."
         )),
@@ -1054,5 +1064,22 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod probe_tests {
+    /// A server on 127.0.0.1 only must count as answering for a `localhost` target, even
+    /// though `localhost` resolves to ::1 first.
+    #[test]
+    fn localhost_target_finds_ipv4_only_server() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            assert_eq!(super::probe_local(&format!("http://localhost:{port}")).await, None);
+            drop(listener);
+            assert!(super::probe_local(&format!("http://127.0.0.1:{port}")).await.is_some());
+        });
     }
 }
