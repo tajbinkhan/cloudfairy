@@ -23,6 +23,9 @@ pub struct TunnelConfig {
     /// Start this tunnel when Cloudfairy opens.
     #[serde(default)]
     pub start_on_open: bool,
+    /// Set for a tunnel on the user's own domain. `None` is a quick tunnel.
+    #[serde(default)]
+    pub named: Option<crate::named::NamedTunnel>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -39,6 +42,10 @@ pub struct Settings {
     pub notify: bool,
     /// Copy a tunnel's link to the clipboard when it goes live.
     pub copy_on_live: bool,
+    /// Origin certificate path that `cloudflared tunnel login` reported. `None` means
+    /// cloudflared's default locations.
+    #[serde(default)]
+    pub origin_cert: Option<String>,
 }
 
 impl Default for Settings {
@@ -50,6 +57,7 @@ impl Default for Settings {
             close_to_tray: true,
             notify: true,
             copy_on_live: false,
+            origin_cert: None,
         }
     }
 }
@@ -111,5 +119,6 @@ mod tests {
         assert!(s.close_to_tray && s.notify && !s.copy_on_live);
         let t = &s.tunnels[0];
         assert!(!t.rewrite_host && !t.start_on_open);
+        assert!(t.named.is_none() && s.origin_cert.is_none());
     }
 }

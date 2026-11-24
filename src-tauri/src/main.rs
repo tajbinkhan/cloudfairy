@@ -5,6 +5,7 @@ mod app_update;
 mod background;
 mod child_guard;
 mod cloudflared;
+mod named;
 mod requests;
 mod settings;
 mod tunnel;
@@ -61,6 +62,7 @@ fn add_tunnel(app: AppHandle, state: State<AppState>, name: String, target: Stri
         target,
         rewrite_host: false,
         start_on_open: false,
+        named: None,
     };
     state.settings.update(|s| s.tunnels.push(cfg.clone()))?;
     background::refresh_tray(&app);
@@ -366,6 +368,12 @@ fn main() {
             open_url,
             copy_text,
             qr_svg,
+            named::cloudflare_account,
+            named::cloudflare_login,
+            named::cloudflare_login_cancel,
+            named::add_named_tunnel,
+            named::set_tunnel_hostname,
+            named::remove_named_tunnel,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Cloudfairy");
