@@ -132,11 +132,13 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         let id = &v.config.id;
         let has_url = v.runtime.public_url.is_some();
         let label = format!("{} · {}", menu_text(&v.config.name), status_label(v));
+        let target = menu_text(crate::share::label(&v.config));
+        let target = MenuItem::with_id(app, format!("target:{id}"), target, false, None::<&str>)?;
         let copy = MenuItem::with_id(app, format!("copy:{id}"), "Copy link", has_url, None::<&str>)?;
         let open = MenuItem::with_id(app, format!("open:{id}"), "Open in browser", has_url, None::<&str>)?;
         let toggle_text = if is_active(v) { "Stop" } else { "Start" };
         let toggle = MenuItem::with_id(app, format!("toggle:{id}"), toggle_text, true, None::<&str>)?;
-        menu.append(&Submenu::with_items(app, label, true, &[&copy, &open, &toggle])?)?;
+        menu.append(&Submenu::with_items(app, label, true, &[&target, &copy, &open, &toggle])?)?;
     }
     let any_active = views.iter().any(is_active);
     let any_idle = views.iter().any(|v| !is_active(v));

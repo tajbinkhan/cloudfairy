@@ -6,14 +6,17 @@ mod background;
 mod child_guard;
 mod cli;
 mod cloudflared;
+mod composer;
+mod deep_link;
 mod har;
 mod lifecycle;
 mod link_hooks;
-mod deep_link;
-mod remote;
 mod named;
+mod ports;
+mod remote;
 mod requests;
 mod settings;
+mod share;
 mod transfer;
 mod tunnel;
 
@@ -21,7 +24,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use app_update::{AppUpdate, PendingUpdate};
 use serde::Serialize;
-use settings::{SettingsStore, TunnelConfig};
+use settings::{SettingsStore, TunnelConfig, TunnelKind};
 use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -71,6 +74,8 @@ fn add_tunnel(app: AppHandle, state: State<AppState>, name: String, target: Stri
         start_on_open: false,
         lifecycle: Default::default(),
         named: None,
+        kind: TunnelKind::Address,
+        folder: None,
     };
     state.settings.update(|s| s.tunnels.push(cfg.clone()))?;
     background::refresh_tray(&app);
@@ -132,6 +137,10 @@ async fn start_one(app: &AppHandle, id: &str) -> CmdResult<TunnelView> {
         .cloned()
         .ok_or("Tunnel not found.")?;
     let (bin, _) = cloudflared::resolve(app, settings.cloudflared_path.as_deref())?;
+    if cfg.kind == TunnelKind::Folder {
+        share::start(app, &state.tunnels, &cfg, &bin, &settings.protocol).await?;
+        return Ok(state.tunnels.view(cfg));
+    }
     state
         .tunnels
         .start(app, &cfg, &bin, &settings.protocol)
@@ -398,6 +407,10 @@ fn main() {
             named::add_named_tunnel,
             named::set_tunnel_hostname,
             named::remove_named_tunnel,
+            composer::suggest_ports,
+            composer::pick_folder,
+            composer::add_folder_tunnel,
+            composer::update_folder_tunnel,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Cloudfairy");

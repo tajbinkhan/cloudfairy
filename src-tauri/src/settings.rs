@@ -29,6 +29,22 @@ pub struct TunnelConfig {
     /// Set for a tunnel on the user's own domain. `None` is a quick tunnel.
     #[serde(default)]
     pub named: Option<crate::named::NamedTunnel>,
+    /// What the tunnel points at. Tunnels saved before folder sharing are addresses.
+    #[serde(default)]
+    pub kind: TunnelKind,
+    /// The shared folder when `kind` is `Folder`. `target` is empty for these tunnels.
+    #[serde(default)]
+    pub folder: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TunnelKind {
+    /// A local address such as `http://localhost:3000`.
+    #[default]
+    Address,
+    /// A folder Cloudfairy serves read-only while the tunnel runs.
+    Folder,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -124,6 +140,8 @@ mod tests {
         assert!(!t.rewrite_host && !t.start_on_open);
         assert_eq!(t.lifecycle, crate::lifecycle::LifecycleConfig::default());
         assert!(t.named.is_none() && s.origin_cert.is_none());
+        assert_eq!(t.kind, TunnelKind::Address);
+        assert!(t.folder.is_none());
     }
 
     #[test]
@@ -141,5 +159,17 @@ mod tests {
         assert!(!partial.restart_on_failure && partial.url_command.is_empty());
         let again: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(&again.tunnels[0].lifecycle, l);
+    }
+
+    #[test]
+    fn folder_tunnels_round_trip() {
+        let json = r#"{"tunnels":[{"id":"t2","name":"Photos","target":"",
+            "kind":"folder","folder":"/home/me/Photos"}]}"#;
+        let s: Settings = serde_json::from_str(json).unwrap();
+        let t = &s.tunnels[0];
+        assert_eq!(t.kind, TunnelKind::Folder);
+        assert_eq!(t.folder.as_deref(), Some("/home/me/Photos"));
+        let again: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(again.tunnels[0].kind, TunnelKind::Folder);
     }
 }

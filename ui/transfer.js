@@ -11,7 +11,7 @@
       <button id="export-tunnels" class="btn small" type="button">Export to a file…</button>
       <button id="import-tunnels" class="btn small" type="button">Import from a file…</button>
     </div>
-    <p class="hint">Passwords aren't exported. Imported tunnels don't start until you start them.</p>`;
+    <p class="hint">Passwords, link commands and file actions aren't exported. Imported tunnels don't start until you start them.</p>`;
   $("#settings-form .dialog-actions").before(section);
 
   const exportBtn = $("#export-tunnels");

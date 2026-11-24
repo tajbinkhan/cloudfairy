@@ -10,6 +10,9 @@
   <link rel="stylesheet" href="lifecycle.css" />
   <link rel="stylesheet" href="extras.css" />
   <link rel="stylesheet" href="named.css" />
+  <link rel="stylesheet" href="ports.css" />
+  <link rel="stylesheet" href="folder.css" />
+  <link rel="stylesheet" href="sparkline.css" />
 </head>
 <body>
   <header class="topbar">
@@ -63,6 +66,7 @@
           <input id="hostname" name="hostname" placeholder="app.example.com" spellcheck="false" />
         </label>
         <button class="btn primary" type="submit">Create tunnel</button>
+        <button id="share-folder" class="btn" type="button">Share a folder</button>
       </div>
       <p id="composer-error" class="form-error" role="alert"></p>
     </form>
@@ -189,6 +193,13 @@
         </label>
         <p id="edit-hostname-hint" class="hint"></p>
       </fieldset>
+      <div class="field" id="edit-folder-row" hidden>
+        <span>Folder</span>
+        <div class="folder-row">
+          <span id="edit-folder" class="folder-path mono"></span>
+          <button id="edit-folder-change" class="btn small" type="button">Change</button>
+        </div>
+      </div>
       <label class="check">
         <input type="checkbox" id="edit-start-on-open" />
         <span>Start when Cloudfairy opens</span>
@@ -281,6 +292,10 @@
   <div id="toast" class="toast" role="status" hidden></div>
 
   <script src="request-tools.js"></script>
+  <!-- Loaded before app.js, which calls into them while it renders. -->
+  <script src="ports.js"></script>
+  <script src="folder.js"></script>
+  <script src="sparkline.js"></script>
   <script src="app.js"></script>
   <script src="lifecycle.js"></script>
   <script src="shortcuts.js"></script>

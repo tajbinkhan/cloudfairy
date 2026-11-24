@@ -576,11 +576,17 @@ pub async fn provision<R: Runtime>(
         if !ok {
             return Err(explain(&output, &cx));
         }
-        if let Some(record) = routed_record(&output) {
-            let record = record.trim_end_matches('.').to_ascii_lowercase();
-            if record != hostname {
-                return Err(Problem::WrongZone { record }.message(&cx));
-            }
+        // Only count the hostname as routed when cloudflared names the record it made. If the
+        // output can't be read, stop rather than assume the record is right.
+        let Some(record) = routed_record(&output) else {
+            log(format!("[cloudfairy] {}", output.trim()));
+            return Err(format!(
+                "Cloudflare didn't confirm the DNS record for {hostname}. Check the logs, then start the tunnel again."
+            ));
+        };
+        let record = record.trim_end_matches('.').to_ascii_lowercase();
+        if record != hostname {
+            return Err(Problem::WrongZone { record }.message(&cx));
         }
         save(app, id, hostname, |n| n.routed_hostname = Some(hostname.to_string()));
         if stopped() {
@@ -763,7 +769,12 @@ pub fn add_named_tunnel(
 /// Switches a tunnel between a random link (`hostname` empty) and a hostname on the user's
 /// domain.
 #[tauri::command]
-pub fn set_tunnel_hostname(state: State<AppState>, id: String, hostname: Option<String>) -> CmdResult<TunnelView> {
+pub fn set_tunnel_hostname(
+    app: AppHandle,
+    state: State<AppState>,
+    id: String,
+    hostname: Option<String>,
+) -> CmdResult<TunnelView> {
     if state.tunnels.is_active(&id) {
         return Err("Stop the tunnel before editing it.".into());
     }
@@ -771,7 +782,24 @@ pub fn set_tunnel_hostname(state: State<AppState>, id: String, hostname: Option<
         None | Some("") => None,
         Some(h) => Some(normalize_hostname(h)?),
     };
-    set_named(&state, &id, hostname)
+    let old_creds = state
+        .settings
+        .get()
+        .tunnels
+        .iter()
+        .find(|t| t.id == id)
+        .and_then(|t| t.named.as_ref()?.credentials_file.clone());
+    let switching_to_random = hostname.is_none();
+    let view = set_named(&state, &id, hostname)?;
+    // Back to a random link: Cloudfairy no longer tracks this Cloudflare tunnel, so don't
+    // leave its secret on disk. Only a file Cloudfairy wrote itself.
+    if let (true, Some(creds)) = (switching_to_random, old_creds) {
+        let creds = PathBuf::from(creds);
+        if credentials_dir(&app).is_ok_and(|dir| creds.parent() == Some(dir.as_path())) {
+            let _ = std::fs::remove_file(&creds);
+        }
+    }
+    Ok(view)
 }
 
 fn set_named(state: &AppState, id: &str, hostname: Option<String>) -> CmdResult<TunnelView> {

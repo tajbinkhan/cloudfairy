@@ -161,7 +161,7 @@ function renderCard(t) {
   const active = t.status === "starting" || t.status === "running";
   el.dataset.status = visualStatus(t);
   $(".card-name", el).textContent = t.name;
-  const tags = [t.target];
+  const tags = [t.kind === "folder" ? t.folder : t.target];
   if (t.startOnOpen) tags.push("Starts with Cloudfairy");
   if (t.rewriteHost) tags.push("Host rewritten");
   if (t.named) tags.push(t.named.hostname);
@@ -200,6 +200,7 @@ function renderCard(t) {
 const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 
 function renderStats(t, el) {
+  window.cfSparkline?.render(t, el);
   const stats = $(".card-stats", el);
   stats.hidden = t.status !== "running";
   if (stats.hidden) return;
@@ -580,10 +581,12 @@ function openEdit(t) {
   window.lifecycleUi?.fill(t);
   fillLinkFields(t);
   $("#edit-error").textContent = "";
+  window.cfFolder?.openEdit(t);
   $("#edit-dialog").showModal();
 }
 
 async function saveEdit() {
+  if (await window.cfFolder?.saveEdit(editingId)) return;
   try {
     await window.lifecycleUi?.save(editingId);
     await saveLinkFields(editingId);

