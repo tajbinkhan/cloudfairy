@@ -226,6 +226,18 @@ impl Tunnels {
         self.map().values().any(Runtime::active)
     }
 
+    /// PIDs of the cloudflared processes running now, and the ports of their metrics servers.
+    /// Port suggestions leave these out.
+    pub fn own_listeners(&self) -> (Vec<u32>, Vec<u16>) {
+        let map = self.map();
+        let pids = map.values().filter_map(|rt| rt.pid.filter(|_| rt.child.is_some())).collect();
+        let ports = map
+            .values()
+            .filter_map(|rt| rt.metrics.as_deref()?.rsplit_once(':')?.1.parse().ok())
+            .collect();
+        (pids, ports)
+    }
+
     pub async fn start<R: TauriRuntime>(
         &self,
         app: &AppHandle<R>,
@@ -659,7 +671,7 @@ fn host_header(url: &str) -> Option<String> {
     (!authority.is_empty()).then(|| authority.to_string())
 }
 
-fn host_port(url: &str) -> Option<(String, u16)> {
+pub(crate) fn host_port(url: &str) -> Option<(String, u16)> {
     let (scheme, rest) = url.split_once("://")?;
     let authority = rest.split(['/', '?', '#']).next()?;
     let authority = authority.rsplit('@').next()?;
@@ -680,7 +692,7 @@ fn host_port(url: &str) -> Option<(String, u16)> {
     }
 }
 
-fn is_loopback(host: &str) -> bool {
+pub(crate) fn is_loopback(host: &str) -> bool {
     let h = host.trim_matches(['[', ']']).to_ascii_lowercase();
     h == "localhost" || h.ends_with(".localhost") || h == "::1" || h == "0.0.0.0" || h.starts_with("127.")
 }
@@ -883,6 +895,8 @@ mod tests {
                 target: normalize_target(&format!("127.0.0.1:{port}")).unwrap(),
                 rewrite_host: false,
                 start_on_open: false,
+                kind: Default::default(),
+                folder: None,
             };
             let bin = which::which("cloudflared").expect("cloudflared on PATH");
             let changes = Arc::new(Mutex::new(Vec::new()));

@@ -23,6 +23,22 @@ pub struct TunnelConfig {
     /// Start this tunnel when Cloudfairy opens.
     #[serde(default)]
     pub start_on_open: bool,
+    /// What the tunnel points at. Tunnels saved before folder sharing are addresses.
+    #[serde(default)]
+    pub kind: TunnelKind,
+    /// The shared folder when `kind` is `Folder`. `target` is empty for these tunnels.
+    #[serde(default)]
+    pub folder: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TunnelKind {
+    /// A local address such as `http://localhost:3000`.
+    #[default]
+    Address,
+    /// A folder Cloudfairy serves read-only while the tunnel runs.
+    Folder,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -111,5 +127,19 @@ mod tests {
         assert!(s.close_to_tray && s.notify && !s.copy_on_live);
         let t = &s.tunnels[0];
         assert!(!t.rewrite_host && !t.start_on_open);
+        assert_eq!(t.kind, TunnelKind::Address);
+        assert!(t.folder.is_none());
+    }
+
+    #[test]
+    fn folder_tunnels_round_trip() {
+        let json = r#"{"tunnels":[{"id":"t2","name":"Photos","target":"",
+            "kind":"folder","folder":"/home/me/Photos"}]}"#;
+        let s: Settings = serde_json::from_str(json).unwrap();
+        let t = &s.tunnels[0];
+        assert_eq!(t.kind, TunnelKind::Folder);
+        assert_eq!(t.folder.as_deref(), Some("/home/me/Photos"));
+        let again: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(again.tunnels[0].kind, TunnelKind::Folder);
     }
 }

@@ -1,0 +1,9 @@
+/* Requests per minute on running cards (sparkline.js). */
+.card-spark { display: inline-flex; align-items: center; gap: 6px; padding-left: 8px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; cursor: default; }
+.card-spark svg { display: block; overflow: visible; }
+.spark-base { stroke: var(--border); stroke-width: 1; }
+.spark-area { fill: color-mix(in srgb, var(--ok) 16%, transparent); stroke: none; }
+.spark-line { fill: none; stroke: var(--ok); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.spark-err { fill: var(--err); stroke: var(--surface); stroke-width: 1; }
+/* The card footer has no room for the graph in a narrow window; the rate stays. */
+@media (max-width: 760px) { .card-spark svg { display: none; } }

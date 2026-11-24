@@ -5,15 +5,18 @@ mod app_update;
 mod background;
 mod child_guard;
 mod cloudflared;
+mod composer;
+mod ports;
 mod requests;
 mod settings;
+mod share;
 mod tunnel;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use app_update::{AppUpdate, PendingUpdate};
 use serde::Serialize;
-use settings::{SettingsStore, TunnelConfig};
+use settings::{SettingsStore, TunnelConfig, TunnelKind};
 use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -61,6 +64,8 @@ fn add_tunnel(app: AppHandle, state: State<AppState>, name: String, target: Stri
         target,
         rewrite_host: false,
         start_on_open: false,
+        kind: TunnelKind::Address,
+        folder: None,
     };
     state.settings.update(|s| s.tunnels.push(cfg.clone()))?;
     background::refresh_tray(&app);
@@ -122,6 +127,10 @@ async fn start_one(app: &AppHandle, id: &str) -> CmdResult<TunnelView> {
         .cloned()
         .ok_or("Tunnel not found.")?;
     let (bin, _) = cloudflared::resolve(app, settings.cloudflared_path.as_deref())?;
+    if cfg.kind == TunnelKind::Folder {
+        share::start(app, &state.tunnels, &cfg, &bin, &settings.protocol).await?;
+        return Ok(state.tunnels.view(cfg));
+    }
     state
         .tunnels
         .start(app, &cfg, &bin, &settings.protocol)
@@ -302,6 +311,7 @@ fn main() {
             Some(vec![MINIMIZED_ARG]),
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .manage(PendingUpdate::default())
         .setup(|app| {
             // Kills cloudflared left running by a session that crashed.
@@ -366,6 +376,10 @@ fn main() {
             open_url,
             copy_text,
             qr_svg,
+            composer::suggest_ports,
+            composer::pick_folder,
+            composer::add_folder_tunnel,
+            composer::update_folder_tunnel,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Cloudfairy");
