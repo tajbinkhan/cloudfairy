@@ -278,7 +278,7 @@ fn header(headers: &[(String, String)], name: &str) -> Option<String> {
 }
 
 /// Headers whose values are credentials. They are hidden so a screen share doesn't leak them.
-fn is_secret(name: &str) -> bool {
+pub(crate) fn is_secret(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     matches!(n.as_str(), "authorization" | "proxy-authorization" | "cookie")
         || ["token", "secret", "password", "api-key", "apikey"].iter().any(|w| n.contains(w))

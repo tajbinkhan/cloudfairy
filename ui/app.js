@@ -141,6 +141,7 @@ function cardTemplate(t) {
         <span class="requests-note">Newest first. Click a request to see its headers.</span>
         <button class="btn ghost small" type="button" data-action="clear-requests">Clear</button>
       </div>
+      ${requestFilterHtml()}
       <p class="requests-empty"></p>
       <ol class="req-list"></ol>
     </section>`;
@@ -335,6 +336,7 @@ function requestRowHtml(e, live) {
     <div class="req-detail" hidden>
       <dl>${dl(facts)}</dl>
       ${e.headers.length ? `<h4>Request headers</h4><dl class="req-headers">${dl(e.headers)}</dl>` : ""}
+      ${requestCurlHtml(e)}
     </div>`;
 }
 
@@ -365,6 +367,7 @@ function upsertRequest(id, entry) {
     while (list.childElementCount > MAX_REQUEST_ROWS) list.lastElementChild.remove();
   }
   renderRequestEmpty(id, el);
+  applyRequestFilter(id, el, [entry]);
 }
 
 async function loadRequests(id, el) {
@@ -376,6 +379,7 @@ async function loadRequests(id, el) {
     .map((e) => `<li data-req="${e.id}">${requestRowHtml(e, live)}</li>`)
     .join("");
   renderRequestEmpty(id, el);
+  applyRequestFilter(id, el, entries);
 }
 
 function closeRequests(id, el) {
@@ -410,6 +414,7 @@ async function clearRequests(id, el) {
   await invoke("clear_tunnel_requests", { id }).catch((e) => toast(errText(e)));
   $(".req-list", el).innerHTML = "";
   renderRequestEmpty(id, el);
+  applyRequestFilter(id, el);
 }
 
 async function startTunnel(id) {
