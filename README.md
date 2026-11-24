@@ -80,15 +80,44 @@ PC". Click **More info**, then **Run anyway**.
 - **Readable errors.** Rate limits, crashes and a missing binary show up on the tunnel's card.
 - **Live cloudflared logs** for each tunnel, with errors and warnings highlighted.
 - **Request list** for each tunnel: time, method, path, status and duration of every request
-  through the link. Click one to see the visitor's IP, country, user agent and request headers.
-  `Authorization`, `Cookie` and other credential headers are hidden. The list lives in memory
-  and keeps the last 500 requests.
+  through the link. Click one to see the visitor's IP, country, user agent, request and response
+  headers, and both bodies (JSON is pretty-printed). `Authorization`, `Cookie`, `Set-Cookie` and
+  other credential headers are hidden. The list lives in memory and keeps the last 500 requests.
+- **Search and export requests.** Filter the list by path, method and status. Copy a request as a
+  `curl` command, or save the requests you see as a HAR file for your browser's dev tools.
+- **Replay** sends a recorded request to your app again, which helps when you're fixing a webhook
+  handler. The result shows up in the list marked as a replay.
+- **Password protection.** Give a tunnel a username and password, and visitors have to enter them
+  before Cloudfairy passes anything to your app.
+- **CORS and extra headers.** One switch answers CORS preflight requests and adds the
+  `Access-Control-Allow-*` headers. You can also add your own response headers.
+- **Share a folder** without running a server. Cloudfairy serves the folder read-only while the
+  tunnel runs, with an index page, file listings and video seeking. Hidden files stay hidden.
+- **Port suggestions.** The new tunnel form lists the ports something is listening on, with the
+  program's name, so you can click one instead of typing it.
+- **Hand the link to other tools.** Each time a tunnel gets a new link, Cloudfairy can write it into
+  a file (for example `PUBLIC_URL=` in a `.env` file) or run a command with the link in
+  `CLOUDFAIRY_URL`. Use it to update a webhook URL in Stripe or GitHub after every restart.
+- **Restart if it fails**, with longer waits between tries, and **stop after** 15 minutes to 8
+  hours so a shared link doesn't stay open longer than you meant.
+- **Traffic sparkline** on each running tunnel: requests per minute over the last 30 minutes, with
+  failed minutes marked.
+- **Your own domain, if you want one.** Sign in to Cloudflare in Settings and a tunnel can use a
+  fixed hostname such as `app.example.com` instead of a random link. Cloudfairy creates the
+  Cloudflare tunnel and its DNS record the first time it starts.
+- **Keyboard shortcuts.** Ctrl/Cmd+N for a new tunnel, arrow keys to move between tunnels, Space
+  to start or stop, Ctrl/Cmd+C to copy the link, `?` for the full list.
+- **Import and export** saved tunnels as a JSON file. Passwords, link commands and file actions
+  stay out of the file, and imported tunnels never start by themselves.
+- **Links and command line.** `cloudfairy start 3000`, `cloudfairy stop --all` and
+  `cloudfairy://start?port=3000` links control a running Cloudfairy. A link always asks before it
+  shares a port, because any web page can open one.
 - **Finds or downloads cloudflared.** It checks your Settings path first, then a copy it downloaded, then your `PATH` and the usual install locations (Homebrew, winget, Program Files).
 - **Host header rewrite** per tunnel, for dev servers that reject unknown hostnames (Vite, webpack-dev-server). Turn it on under Edit.
 - **Runs in the tray.** Close the window while tunnels are running and they keep running. The tray menu copies or opens each link, starts and stops tunnels, and quits.
 - **Notifications** when a tunnel goes live or fails while the window is in the background. Turn on "Copy a tunnel's link when it goes live" to get each new link on your clipboard.
 - **Starts with your computer, if you want.** Mark tunnels "Start when Cloudfairy opens" and turn on "Open Cloudfairy in the tray when you log in".
-- **Settings:** a custom cloudflared path, and the protocol (Auto / QUIC / HTTP2). Use HTTP2 on networks that block UDP.
+- **Settings:** a custom cloudflared path, the protocol (Auto / QUIC / HTTP2), and whether tunnels go through Cloudfairy's local proxy. Use HTTP2 on networks that block UDP.
 - **Updates itself.** When a new version is out, Cloudfairy offers to install it when it opens, then restarts. Signed updates come from GitHub Releases.
 - **Tunnels are saved between launches.** Only the ones you mark start automatically, and every cloudflared process is stopped when you quit the app.
 
@@ -103,11 +132,18 @@ for each tunnel and reads its output line by line. Every two seconds it reads th
 from cloudflared's metrics server, which only listens on `127.0.0.1`. cloudflared only makes
 outbound connections, so you don't open any ports on your router or firewall.
 
-At debug level cloudflared logs one line for each request and one for each response, and
-Cloudfairy builds the request list from them. These lines stay out of the Logs view. The response
-line doesn't say which request it answers, so Cloudfairy pairs it with the oldest unanswered
-request on the same connection. When several requests on one connection overlap, that pairing is
-a guess, and the status shows with a `?`.
+By default `<target>` isn't your app. Cloudfairy starts a small proxy on a random
+`127.0.0.1` port for each tunnel, points cloudflared at it, and the proxy passes each request on
+to your app. The request list, replay, password check, CORS and extra headers all live in that
+proxy. Bodies stream through as they arrive, so uploads, Server-Sent Events and WebSockets (Vite
+and webpack hot reload) work as before. The proxy keeps the first 1 MB of each body, up to 50 MB
+per tunnel, and drops the oldest bodies first.
+
+Turn off "Route tunnels through Cloudfairy" in Settings and cloudflared reaches your app
+directly. The request list then comes from cloudflared's debug log, which has no bodies. These
+lines stay out of the Logs view. The response line doesn't say which request it answers, so
+Cloudfairy pairs it with the oldest unanswered request on the same connection. When several
+requests on one connection overlap, that pairing is a guess, and the status shows with a `?`.
 
 <details>
 <summary><b>Code layout and where files are stored</b></summary>
@@ -129,6 +165,15 @@ ui/ (HTML/CSS/JS) ──invoke──▶ src-tauri/src/main.rs (commands)
 | File | Purpose |
 |---|---|
 | `src-tauri/src/tunnel.rs` | Process lifecycle, log parsing, local-port check, input normalization |
+| `src-tauri/src/proxy.rs`, `tunnel/routed.rs` | The local proxy: forwarding, WebSocket upgrades, password, CORS, extra headers, replay |
+| `src-tauri/src/capture.rs`, `requests.rs` | The request list from the proxy, and from cloudflared's debug log when the proxy is off |
+| `src-tauri/src/har.rs` | HAR export |
+| `src-tauri/src/lifecycle.rs`, `link_hooks.rs` | Restart on failure, the stop timer, and writing or sending each new link |
+| `src-tauri/src/share.rs` | The read-only file server for shared folders |
+| `src-tauri/src/ports.rs` | Finding listening ports for the suggestions |
+| `src-tauri/src/named.rs`, `tunnel/named_start.rs` | Cloudflare sign-in and named tunnels on your own domain |
+| `src-tauri/src/transfer.rs` | Importing and exporting saved tunnels |
+| `src-tauri/src/cli.rs`, `deep_link.rs`, `remote.rs` | The command line and `cloudfairy://` links |
 | `src-tauri/src/cloudflared.rs` | Finding the binary, reading its version, downloading from GitHub releases (`.tgz` on macOS) |
 | `src-tauri/src/app_update.rs` | Updating Cloudfairy itself: checking the latest GitHub release, downloading and verifying the signed update |
 | `src-tauri/src/settings.rs` | `settings.json` persistence |
@@ -208,6 +253,7 @@ first run.
 cd src-tauri
 cargo test                                         # unit tests: input parsing, log parsing, args
 cargo test -- --ignored quick_tunnel_end_to_end    # real tunnel through Cloudflare (needs network + cloudflared on PATH)
+cargo test -- --ignored folder_tunnel_end_to_end   # shares a folder through a real tunnel
 ```
 
 The end-to-end test opens a tunnel to an empty port and checks that the warning appears. Then it
@@ -222,6 +268,10 @@ starts a server on that port and checks that the warning clears. It fetches the 
 - **It never reaches "Live" on an office or school network**: set the protocol to HTTP/2 in Settings.
 - **The URL shows a Cloudflare 502 page**: your local server isn't running, or it's on a different port.
 - **Vite / webpack dev server says "Blocked request" or "Invalid Host header"**: open the tunnel's Edit dialog and turn on "Send the local address as the Host header". You can instead add `.trycloudflare.com` to the dev server's allowed hosts (for Vite, `server.allowedHosts`). Use that option if your app builds links or redirects from the Host header, because the rewrite makes them point at `localhost`.
+
+- **A tunnel with a password won't start**: the password needs Cloudfairy's proxy. Turn on "Route tunnels through Cloudfairy" in Settings, or remove the password in Edit.
+- **Request details show no bodies or Replay button**: the tunnel ran with "Route tunnels through Cloudfairy" off. Turn it on and start the tunnel again.
+- **A named tunnel says the domain isn't in your account**: the hostname has to be on a domain whose DNS Cloudflare manages, in the account you signed in with. To use a different account, delete the cert file shown in Settings and sign in again.
 
 Quick tunnels are meant for testing and sharing. They have no uptime guarantee, and the URL changes every time you start one.
 
@@ -257,9 +307,14 @@ servers, and only for these reasons:
 - **Cloudflare**, when you start a tunnel. cloudflared connects to Cloudflare and forwards
   requests from your public link to your local server. Cloudflare's
   [privacy policy](https://www.cloudflare.com/privacypolicy/) covers that traffic.
+- **Your Cloudflare account**, only if you sign in for named tunnels. cloudflared opens the
+  sign-in page in your browser, then creates, routes and deletes tunnels in that account when you
+  ask it to.
 
-Your tunnels and settings are stored only on your computer. The request list stays in memory
-and is gone when you quit.
+Your tunnels and settings are stored only on your computer. Tunnel passwords are saved in plain
+text in the settings file. The request list, including request and response bodies, stays in
+memory and is gone when you quit. Link commands run on your computer with your user's
+permissions, and Cloudfairy never imports them from a file.
 
 ## License
 
