@@ -63,3 +63,5 @@ strip = true
 tauri = { version = "2", features = ["test"] }
 # An https test server for the proxy tests.
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+# Makes the https test server's certificate at run time.
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring"] }

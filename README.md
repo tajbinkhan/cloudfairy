@@ -107,8 +107,9 @@ PC". Click **More info**, then **Run anyway**.
   Cloudflare tunnel and its DNS record the first time it starts.
 - **Keyboard shortcuts.** Ctrl/Cmd+N for a new tunnel, arrow keys to move between tunnels, Space
   to start or stop, Ctrl/Cmd+C to copy the link, `?` for the full list.
-- **Import and export** saved tunnels as a JSON file. Passwords, link commands and file actions
-  stay out of the file, and imported tunnels never start by themselves.
+- **Import and export** saved tunnels as a JSON file. Passwords, link commands, file actions,
+  folder paths, CORS and extra headers stay out of the file, and imported tunnels never start by
+  themselves. An imported folder tunnel asks you to pick its folder in Edit.
 - **Links and command line.** `cloudfairy start 3000`, `cloudfairy stop --all` and
   `cloudfairy://start?port=3000` links control a running Cloudfairy. A link always asks before it
   shares a port, because any web page can open one.

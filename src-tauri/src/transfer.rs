@@ -87,10 +87,17 @@ pub fn new_config(id: String, target: &str, name: Option<String>) -> Result<Tunn
         .map_err(|e| e.to_string())
 }
 
-/// Removes fields that run code, write files or only make sense on this computer:
-/// the link hooks (a shared file could otherwise plant a command that runs when the tunnel
-/// goes live) and a named tunnel's account ids and credentials path. The hostname stays.
+/// Removes fields that a shared file shouldn't be able to set, or that only make sense on
+/// this computer:
+/// - the link hooks, which could plant a command that runs when the tunnel goes live
+/// - a shared folder's path, which could point at a home or system folder and make it public
+///   the moment someone presses Start; an imported folder tunnel asks for its folder in Edit
+/// - the CORS switch and extra response headers, which change what the user's app sends
+/// - a named tunnel's account ids and credentials path (the hostname stays)
 fn strip_machine_fields(map: &mut serde_json::Map<String, Value>) {
+    for key in ["folder", "cors", "extraHeaders"] {
+        map.remove(key);
+    }
     if let Some(Value::Object(lifecycle)) = map.get_mut("lifecycle") {
         for key in ["urlFile", "urlFileVar", "urlCommand"] {
             lifecycle.remove(key);
@@ -163,16 +170,15 @@ fn parse_entry(item: Value) -> Result<TunnelConfig, String> {
     };
     let is_folder = map.get("kind").and_then(Value::as_str) == Some("folder");
     let target = if is_folder {
-        match map.get("folder") {
-            Some(Value::String(s)) if std::path::Path::new(s).is_absolute() => String::new(),
-            _ => return Err("The shared folder is missing.".into()),
-        }
+        String::new()
     } else {
         match map.get("target") {
             Some(Value::String(s)) => tunnel::normalize_target(s)?,
             _ => return Err("The local address is missing.".into()),
         }
     };
+    // Name a folder tunnel after its folder before the path is dropped.
+    let folder_fallback = map.get("folder").and_then(Value::as_str).map(folder_name);
     strip_machine_fields(&mut map);
     let name = match map.get("name") {
         None | Some(Value::Null) => None,
@@ -181,7 +187,7 @@ fn parse_entry(item: Value) -> Result<TunnelConfig, String> {
     };
     map.insert("id".into(), Value::String(String::new()));
     let fallback = if is_folder {
-        map.get("folder").and_then(Value::as_str).map(folder_name).unwrap_or_default()
+        folder_fallback.unwrap_or_else(|| "Folder".into())
     } else {
         default_name(&target)
     };
@@ -389,19 +395,20 @@ mod tests {
     }
 
     #[test]
-    fn folder_tunnels_import() {
+    fn imports_leave_out_folder_paths_and_header_settings() {
         let text = file(json!([
-            { "kind": "folder", "folder": if cfg!(windows) { r"C:\Share\Photos" } else { "/share/Photos" }, "target": "" },
-            { "kind": "folder", "folder": if cfg!(windows) { r"C:\Share\Docs" } else { "/share/Docs" }, "name": "Photos" },
+            { "kind": "folder", "folder": if cfg!(windows) { r"C:\Users\me" } else { "/home/me" }, "target": "" },
+            { "kind": "folder", "name": "Docs" },
+            { "target": "3000", "cors": true, "extraHeaders": [{ "name": "X-A", "value": "1" }] },
         ]));
         let parsed = parse_import(&text).unwrap();
-        assert_eq!(parsed[0].name, "Photos");
+        assert_eq!(parsed[0].name, "me", "named after the folder it had");
+        assert!(parsed[0].folder.is_none(), "the path never comes in from a file");
         assert_eq!(parsed[0].target, "");
-        let mut saved_list = Vec::new();
-        let (added, skipped) = merge(&mut saved_list, parsed);
-        assert_eq!((added.len(), skipped), (2, 0), "same name, different folder is not a duplicate");
-        let bad = file(json!([{ "kind": "folder", "folder": "relative/path" }]));
-        assert!(parse_import(&bad).is_err());
+        assert_eq!(parsed[1].name, "Docs");
+        assert!(!parsed[2].cors && parsed[2].extra_headers.is_empty());
+        let out: Value = serde_json::from_str(&export_json(&parsed).unwrap()).unwrap();
+        assert!(out["tunnels"][2].get("cors").is_none());
     }
 
     #[test]

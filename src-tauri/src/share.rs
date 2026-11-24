@@ -114,7 +114,7 @@ pub async fn start<R: TauriRuntime>(
     protocol: &str,
     route: bool,
 ) -> Result<(), String> {
-    let folder = cfg.folder.as_deref().ok_or("This tunnel has no folder to share.")?;
+    let folder = cfg.folder.as_deref().ok_or("Choose a folder for this tunnel in Edit, then start it.")?;
     if tunnels.is_active(&cfg.id) {
         return Err("This tunnel is already running.".into());
     }
