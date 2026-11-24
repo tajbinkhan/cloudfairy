@@ -33,7 +33,7 @@ pub fn show_window(app: &AppHandle) {
     }
 }
 
-fn window_focused(app: &AppHandle) -> bool {
+pub fn window_focused(app: &AppHandle) -> bool {
     app.get_webview_window("main").is_some_and(|w| {
         w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false)
     })
@@ -230,20 +230,30 @@ pub fn on_change(app: &AppHandle, change: Change) {
             let copied = settings.copy_on_live && app.clipboard().write_text(url.clone()).is_ok();
             if settings.notify && !window_focused(app) {
                 let body = if copied { format!("{url}\nLink copied.") } else { url };
-                notify(app, &format!("{} is live", cfg.name), &body);
+                // Quick tunnel links change on every start, so a restart brings a new one.
+                let title = if crate::lifecycle::restarted(app, &id) {
+                    format!("{} restarted with a new link", cfg.name)
+                } else {
+                    format!("{} is live", cfg.name)
+                };
+                notify(app, &title, &body);
             }
         }
         Change::Failed { id, error } => {
             let settings = app.state::<AppState>().settings.get();
             let Some(cfg) = settings.tunnels.iter().find(|t| t.id == id) else { return };
             if settings.notify && !window_focused(app) {
-                notify(app, &format!("{} stopped", cfg.name), &error);
+                let body = match crate::lifecycle::restart_in(app, &id) {
+                    Some(secs) => format!("{error}\nRestarting in {secs} s."),
+                    None => error,
+                };
+                notify(app, &format!("{} stopped", cfg.name), &body);
             }
         }
     }
 }
 
-fn notify(app: &AppHandle, title: &str, body: &str) {
+pub fn notify(app: &AppHandle, title: &str, body: &str) {
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
         eprintln!("Couldn't show a notification: {e}");
     }

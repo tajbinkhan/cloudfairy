@@ -218,6 +218,14 @@ impl Tunnels {
         }
     }
 
+    /// Adds a line to a tunnel's log view, for messages that don't come from cloudflared.
+    pub fn log_line<R: TauriRuntime>(&self, app: &AppHandle<R>, id: &str, line: String) {
+        let mut map = self.map();
+        let Some(rt) = map.get_mut(id) else { return };
+        let _ = app.emit(EVENT_LOG, LogEvent { id, line: &line });
+        rt.log(line);
+    }
+
     pub fn is_active(&self, id: &str) -> bool {
         self.map().get(id).is_some_and(Runtime::active)
     }
@@ -883,6 +891,7 @@ mod tests {
                 target: normalize_target(&format!("127.0.0.1:{port}")).unwrap(),
                 rewrite_host: false,
                 start_on_open: false,
+                lifecycle: Default::default(),
             };
             let bin = which::which("cloudflared").expect("cloudflared on PATH");
             let changes = Arc::new(Mutex::new(Vec::new()));

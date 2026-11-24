@@ -23,6 +23,9 @@ pub struct TunnelConfig {
     /// Start this tunnel when Cloudfairy opens.
     #[serde(default)]
     pub start_on_open: bool,
+    /// Restart, stop timer and what to do with each new link.
+    #[serde(default)]
+    pub lifecycle: crate::lifecycle::LifecycleConfig,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -111,5 +114,23 @@ mod tests {
         assert!(s.close_to_tray && s.notify && !s.copy_on_live);
         let t = &s.tunnels[0];
         assert!(!t.rewrite_host && !t.start_on_open);
+        assert_eq!(t.lifecycle, crate::lifecycle::LifecycleConfig::default());
+    }
+
+    #[test]
+    fn lifecycle_options_round_trip() {
+        let json = r#"{"tunnels":[{"id":"t1","name":"App","target":"http://localhost:3000",
+            "lifecycle":{"restartOnFailure":true,"stopAfterMinutes":30,"urlFile":"/app/.env",
+            "urlFileVar":"PUBLIC_URL","urlCommand":"echo {url}"}},
+            {"id":"t2","name":"B","target":"http://localhost:4000","lifecycle":{"stopAfterMinutes":15}}]}"#;
+        let s: Settings = serde_json::from_str(json).unwrap();
+        let l = &s.tunnels[0].lifecycle;
+        assert!(l.restart_on_failure);
+        assert_eq!((l.stop_after_minutes, l.url_file.as_str()), (30, "/app/.env"));
+        assert_eq!((l.url_file_var.as_str(), l.url_command.as_str()), ("PUBLIC_URL", "echo {url}"));
+        let partial = &s.tunnels[1].lifecycle;
+        assert!(!partial.restart_on_failure && partial.url_command.is_empty());
+        let again: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(&again.tunnels[0].lifecycle, l);
     }
 }

@@ -191,6 +191,7 @@ function renderCard(t) {
 
   renderStats(t, el);
   $('[data-action="edit"]', el).disabled = active;
+  window.lifecycleUi?.render(t, el);
   updateEmpty();
 }
 
@@ -207,7 +208,9 @@ function renderStats(t, el) {
     : "No requests yet";
 }
 
-const isActive = (t) => t.status === "starting" || t.status === "running";
+// A failed tunnel waiting to restart counts as active, so Stop cancels the restart.
+const isActive = (t) =>
+  t.status === "starting" || t.status === "running" || Boolean(window.lifecycleUi?.restartPending(t.id));
 
 function updateEmpty() {
   $("#empty").hidden = tunnels.size > 0;
@@ -473,7 +476,7 @@ async function onCardClick(ev) {
 
   switch (target.dataset.action) {
     case "toggle":
-      if (t.status === "starting" || t.status === "running") {
+      if (isActive(t)) {
         await invoke("stop_tunnel", { id });
       } else {
         await startTunnel(id);
@@ -566,12 +569,14 @@ function openEdit(t) {
   $("#edit-target").value = t.target;
   $("#edit-rewrite-host").checked = Boolean(t.rewriteHost);
   $("#edit-start-on-open").checked = Boolean(t.startOnOpen);
+  window.lifecycleUi?.fill(t);
   $("#edit-error").textContent = "";
   $("#edit-dialog").showModal();
 }
 
 async function saveEdit() {
   try {
+    await window.lifecycleUi?.save(editingId);
     const view = await invoke("update_tunnel", {
       id: editingId,
       name: $("#edit-name").value,
