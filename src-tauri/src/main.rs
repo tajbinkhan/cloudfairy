@@ -6,6 +6,8 @@ mod background;
 mod child_guard;
 mod cloudflared;
 mod har;
+mod lifecycle;
+mod link_hooks;
 mod requests;
 mod settings;
 mod tunnel;
@@ -62,6 +64,7 @@ fn add_tunnel(app: AppHandle, state: State<AppState>, name: String, target: Stri
         target,
         rewrite_host: false,
         start_on_open: false,
+        lifecycle: Default::default(),
     };
     state.settings.update(|s| s.tunnels.push(cfg.clone()))?;
     background::refresh_tray(&app);
@@ -131,7 +134,8 @@ async fn start_one(app: &AppHandle, id: &str) -> CmdResult<TunnelView> {
 }
 
 #[tauri::command]
-fn stop_tunnel(state: State<AppState>, id: String) {
+fn stop_tunnel(app: AppHandle, state: State<AppState>, id: String) {
+    lifecycle::cancel(&app, &id);
     state.tunnels.stop(&id);
 }
 
@@ -319,9 +323,11 @@ fn main() {
                 settings: SettingsStore::load(config_dir.join("settings.json")),
                 tunnels,
             });
+            app.manage(lifecycle::Lifecycles::default());
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(change) = rx.recv().await {
+                    lifecycle::on_change(&handle, &change);
                     background::on_change(&handle, change);
                 }
             });
@@ -369,6 +375,8 @@ fn main() {
             open_url,
             copy_text,
             qr_svg,
+            lifecycle::set_tunnel_lifecycle,
+            lifecycle::lifecycle_states,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Cloudfairy");

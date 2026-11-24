@@ -7,6 +7,7 @@
   <meta name="description" content="Cloudfairy: desktop app for Cloudflare quick tunnels. Share a local port with a public trycloudflare.com link." />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="request-tools.css" />
+  <link rel="stylesheet" href="lifecycle.css" />
 </head>
 <body>
   <header class="topbar">
@@ -160,6 +161,47 @@
         "Blocked request" or "Invalid Host header". Vite and webpack-dev-server do this for hostnames
         they don't know. Leave it off if your app builds links or redirects from the Host header.
         With it on, your server's own host check no longer applies to requests through the link.</p>
+      <div class="field-group">
+        <div class="label">While it runs</div>
+        <label class="check">
+          <input type="checkbox" id="edit-restart" aria-describedby="edit-restart-hint" />
+          <span>Restart if it fails</span>
+        </label>
+        <p id="edit-restart-hint" class="hint check-hint">Waits 5 s, then longer after each failure, up to
+          5 min. Each restart gets a new link.</p>
+        <label class="field">
+          <span>Stop after</span>
+          <select id="edit-stop-after">
+            <option value="0">Don't stop</option>
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60">1 hour</option>
+            <option value="120">2 hours</option>
+            <option value="480">8 hours</option>
+          </select>
+        </label>
+      </div>
+      <div class="field-group">
+        <div class="label">When it gets a new link</div>
+        <div class="lc-row">
+          <label class="field lc-file">
+            <span>Write it to a file <em>(optional)</em></span>
+            <input id="edit-url-file" class="mono" placeholder="Full path, like a .env file" spellcheck="false" />
+          </label>
+          <label class="field lc-var">
+            <span>Variable <em>(optional)</em></span>
+            <input id="edit-url-var" class="mono" placeholder="PUBLIC_URL" spellcheck="false" />
+          </label>
+        </div>
+        <p class="hint">With a variable, Cloudfairy sets that line, like <code>PUBLIC_URL=https://…</code>,
+          and keeps the rest of the file. Without one, the file holds only the link.</p>
+        <label class="field">
+          <span>Run a command <em>(optional)</em></span>
+          <input id="edit-url-command" class="mono" placeholder="curl -d url={url} http://localhost:3000/hook" spellcheck="false" />
+        </label>
+        <p class="hint"><code>{url}</code> and the <code>CLOUDFAIRY_URL</code> variable hold the link. The
+          command runs in your home folder, stops after 60 s, and its output goes to the tunnel's logs.</p>
+      </div>
       <p id="edit-error" class="form-error" role="alert"></p>
       <div class="dialog-actions">
         <button class="btn ghost" value="cancel" type="submit" formnovalidate>Cancel</button>
@@ -183,5 +225,6 @@
 
   <script src="request-tools.js"></script>
   <script src="app.js"></script>
+  <script src="lifecycle.js"></script>
 </body>
 </html>
