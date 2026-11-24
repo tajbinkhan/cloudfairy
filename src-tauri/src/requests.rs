@@ -16,7 +16,9 @@ use std::collections::VecDeque;
 
 use serde::Serialize;
 
-const MAX_ENTRIES: usize = 500;
+use crate::capture::BodyInfo;
+
+pub const MAX_ENTRIES: usize = 500;
 /// A request still unanswered after this long is no longer offered responses.
 const PENDING_TIMEOUT_MS: u64 = 120_000;
 
@@ -43,6 +45,19 @@ pub struct RequestEntry {
     pub user_agent: Option<String>,
     /// Request headers as cloudflared received them, with credentials hidden.
     pub headers: Vec<(String, String)>,
+    /// The fields below are only set when Cloudfairy's proxy recorded the request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proxied: Option<bool>,
+    /// Response headers as the visitor got them, with credentials hidden.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_headers: Option<Vec<(String, String)>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_body: Option<BodyInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_body: Option<BodyInfo>,
+    /// The id of the request this one sent again.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replay_of: Option<u64>,
 }
 
 #[derive(Default)]
@@ -284,7 +299,7 @@ pub(crate) fn is_secret(name: &str) -> bool {
         || ["token", "secret", "password", "api-key", "apikey"].iter().any(|w| n.contains(w))
 }
 
-fn hidden(value: &str) -> String {
+pub(crate) fn hidden(value: &str) -> String {
     format!("(hidden, {} characters)", value.chars().count())
 }
 

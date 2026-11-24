@@ -3,6 +3,7 @@
 
 mod app_update;
 mod background;
+mod capture;
 mod child_guard;
 mod cli;
 mod cloudflared;
@@ -14,6 +15,8 @@ mod link_hooks;
 mod named;
 mod ports;
 mod remote;
+mod proxy;
+mod proxy_cmds;
 mod requests;
 mod settings;
 mod share;
@@ -72,10 +75,7 @@ fn add_tunnel(app: AppHandle, state: State<AppState>, name: String, target: Stri
         target,
         rewrite_host: false,
         start_on_open: false,
-        lifecycle: Default::default(),
-        named: None,
-        kind: TunnelKind::Address,
-        folder: None,
+        ..Default::default()
     };
     state.settings.update(|s| s.tunnels.push(cfg.clone()))?;
     background::refresh_tray(&app);
@@ -138,12 +138,12 @@ async fn start_one(app: &AppHandle, id: &str) -> CmdResult<TunnelView> {
         .ok_or("Tunnel not found.")?;
     let (bin, _) = cloudflared::resolve(app, settings.cloudflared_path.as_deref())?;
     if cfg.kind == TunnelKind::Folder {
-        share::start(app, &state.tunnels, &cfg, &bin, &settings.protocol).await?;
+        share::start(app, &state.tunnels, &cfg, &bin, &settings.protocol, settings.route_through_proxy).await?;
         return Ok(state.tunnels.view(cfg));
     }
     state
         .tunnels
-        .start(app, &cfg, &bin, &settings.protocol)
+        .start(app, &cfg, &bin, &settings.protocol, settings.route_through_proxy)
         .await?;
     Ok(state.tunnels.view(cfg))
 }
@@ -411,6 +411,11 @@ fn main() {
             composer::pick_folder,
             composer::add_folder_tunnel,
             composer::update_folder_tunnel,
+            proxy_cmds::request_body,
+            proxy_cmds::replay_request,
+            proxy_cmds::update_tunnel_proxy,
+            proxy_cmds::get_proxy_settings,
+            proxy_cmds::save_proxy_settings,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Cloudfairy");

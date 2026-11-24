@@ -9,7 +9,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TunnelConfig {
     pub id: String,
@@ -35,6 +35,17 @@ pub struct TunnelConfig {
     /// The shared folder when `kind` is `Folder`. `target` is empty for these tunnels.
     #[serde(default)]
     pub folder: Option<String>,
+    /// Basic auth on the public link. An empty password turns it off. Needs the proxy.
+    #[serde(default)]
+    pub auth_user: String,
+    #[serde(default)]
+    pub auth_password: String,
+    /// Answer CORS preflight requests and add `Access-Control-Allow-*` headers. Needs the proxy.
+    #[serde(default)]
+    pub cors: bool,
+    /// Headers added to every response. Needs the proxy.
+    #[serde(default)]
+    pub extra_headers: Vec<HeaderPair>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,6 +56,12 @@ pub enum TunnelKind {
     Address,
     /// A folder Cloudfairy serves read-only while the tunnel runs.
     Folder,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HeaderPair {
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -65,6 +82,9 @@ pub struct Settings {
     /// cloudflared's default locations.
     #[serde(default)]
     pub origin_cert: Option<String>,
+    /// Send tunnel traffic through Cloudfairy's local proxy (see `proxy.rs`), which records
+    /// requests with bodies and adds password protection, CORS and extra headers.
+    pub route_through_proxy: bool,
 }
 
 impl Default for Settings {
@@ -77,6 +97,7 @@ impl Default for Settings {
             notify: true,
             copy_on_live: false,
             origin_cert: None,
+            route_through_proxy: true,
         }
     }
 }
@@ -142,6 +163,8 @@ mod tests {
         assert!(t.named.is_none() && s.origin_cert.is_none());
         assert_eq!(t.kind, TunnelKind::Address);
         assert!(t.folder.is_none());
+        assert!(s.route_through_proxy, "the proxy is on for existing installs");
+        assert!(t.auth_user.is_empty() && t.auth_password.is_empty() && !t.cors && t.extra_headers.is_empty());
     }
 
     #[test]
@@ -171,5 +194,22 @@ mod tests {
         assert_eq!(t.folder.as_deref(), Some("/home/me/Photos"));
         let again: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(again.tunnels[0].kind, TunnelKind::Folder);
+    }
+
+    #[test]
+    fn proxy_options_round_trip() {
+        let t = TunnelConfig {
+            id: "t1".into(),
+            auth_user: "me".into(),
+            auth_password: "pw".into(),
+            cors: true,
+            extra_headers: vec![HeaderPair { name: "X-Test".into(), value: "1".into() }],
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(json.contains(r#""authPassword":"pw""#));
+        assert!(json.contains(r#""extraHeaders":[{"name":"X-Test","value":"1"}]"#));
+        let back: TunnelConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!((back.cors, back.extra_headers), (true, t.extra_headers));
     }
 }

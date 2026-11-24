@@ -112,6 +112,7 @@ pub async fn start<R: TauriRuntime>(
     cfg: &TunnelConfig,
     bin: &Path,
     protocol: &str,
+    route: bool,
 ) -> Result<(), String> {
     let folder = cfg.folder.as_deref().ok_or("This tunnel has no folder to share.")?;
     if tunnels.is_active(&cfg.id) {
@@ -136,7 +137,7 @@ pub async fn start<R: TauriRuntime>(
         rewrite_host: false,
         ..cfg.clone()
     };
-    if let Err(e) = tunnels.start(app, &local, bin, protocol).await {
+    if let Err(e) = tunnels.start(app, &local, bin, protocol, route).await {
         cancel.cancel();
         return Err(e);
     }
@@ -795,13 +796,12 @@ mod tests {
             start_on_open: false,
             kind: TunnelKind::Folder,
             folder: Some(f.root.to_string_lossy().into_owned()),
-            lifecycle: Default::default(),
-            named: None,
+            ..Default::default()
         };
         let bin = which::which("cloudflared").expect("cloudflared on PATH");
         tauri::async_runtime::block_on(async {
-            start(&handle, &tunnels, &cfg, &bin, "auto").await.unwrap();
-            assert!(start(&handle, &tunnels, &cfg, &bin, "auto").await.is_err(), "double start is rejected");
+            start(&handle, &tunnels, &cfg, &bin, "auto", false).await.unwrap();
+            assert!(start(&handle, &tunnels, &cfg, &bin, "auto", false).await.is_err(), "double start is rejected");
             let port = ports()[0];
 
             let deadline = std::time::Instant::now() + Duration::from_secs(60);

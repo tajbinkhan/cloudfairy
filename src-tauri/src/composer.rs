@@ -65,8 +65,7 @@ pub fn add_folder_tunnel(app: AppHandle, state: State<AppState>, name: String, f
         start_on_open: false,
         kind: TunnelKind::Folder,
         folder: Some(folder),
-        lifecycle: Default::default(),
-        named: None,
+        ..Default::default()
     };
     state.settings.update(|s| s.tunnels.push(cfg.clone()))?;
     background::refresh_tray(&app);

@@ -10,6 +10,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::capture::{BodyView, Side};
 use crate::requests::{self, RequestEntry};
 use crate::AppState;
 
@@ -122,20 +123,28 @@ const COMMENT: &str = "Exported by Cloudfairy from cloudflared's debug log. Cred
     (Authorization, Cookie and similar) are left out. Bodies and response headers aren't recorded.";
 
 /// Builds a HAR log from request list entries, oldest first.
+/// Looks up a recorded body by request id. The proxy keeps bodies apart from the list.
+pub type Bodies<'a> = &'a dyn Fn(u64, Side) -> Option<BodyView>;
+
+#[cfg(test)]
 pub fn build(entries: &[RequestEntry], app_version: &str) -> Har {
+    build_with(entries, app_version, &|_, _| None)
+}
+
+pub fn build_with(entries: &[RequestEntry], app_version: &str, bodies: Bodies) -> Har {
     let mut entries: Vec<&RequestEntry> = entries.iter().collect();
     entries.sort_by_key(|e| (e.at, e.id));
     Har {
         log: Log {
             version: "1.2",
             creator: Creator { name: "Cloudfairy", version: app_version.into() },
-            entries: entries.into_iter().map(entry).collect(),
+            entries: entries.into_iter().map(|e| entry(e, bodies)).collect(),
             comment: COMMENT.into(),
         },
     }
 }
 
-fn entry(e: &RequestEntry) -> Entry {
+fn entry(e: &RequestEntry, bodies: Bodies) -> Entry {
     let time = e.duration_ms.unwrap_or(0);
     Entry {
         started_date_time: iso_time(e.at),
@@ -147,7 +156,7 @@ fn entry(e: &RequestEntry) -> Entry {
             cookies: Vec::new(),
             headers: request_headers(e),
             query_string: query_string(&e.url),
-            post_data: post_data(e),
+            post_data: post_data(e, bodies),
             headers_size: -1,
             body_size: e.size.map_or(-1, |n| n as i64),
         },
@@ -158,7 +167,7 @@ fn entry(e: &RequestEntry) -> Entry {
             http_version: if e.status.is_some() { HTTP_VERSION } else { "" },
             cookies: Vec::new(),
             headers: response_headers(e),
-            content: response_content(e),
+            content: response_content(e, bodies),
             redirect_url: String::new(),
             headers_size: -1,
             body_size: -1,
@@ -180,19 +189,40 @@ fn request_headers(e: &RequestEntry) -> Vec<Header> {
         .collect()
 }
 
-/// The request body. Not recorded yet, so always `None`.
-fn post_data(_e: &RequestEntry) -> Option<PostData> {
-    None
+/// The request body, when the proxy recorded it as text.
+fn post_data(e: &RequestEntry, bodies: Bodies) -> Option<PostData> {
+    e.request_body.as_ref()?;
+    let view = bodies(e.id, Side::Request)?;
+    Some(PostData { mime_type: mime(&view), text: view.text? })
 }
 
-/// Response headers. Not recorded yet, so always empty.
-fn response_headers(_e: &RequestEntry) -> Vec<Header> {
-    Vec::new()
+/// Response headers the proxy recorded, without credentials or cookies.
+fn response_headers(e: &RequestEntry) -> Vec<Header> {
+    e.response_headers
+        .iter()
+        .flatten()
+        .filter(|(name, _)| !requests::is_secret(name) && !name.eq_ignore_ascii_case("set-cookie"))
+        .map(|(name, value)| Header { name: name.clone(), value: value.clone() })
+        .collect()
 }
 
-/// The response body. Not recorded yet, so only the size field is set, to "unknown".
-fn response_content(_e: &RequestEntry) -> Content {
-    Content { size: -1, mime_type: UNKNOWN_MIME.into(), text: None, encoding: None }
+/// The response body. Text bodies are included; binary ones only give their size.
+fn response_content(e: &RequestEntry, bodies: Bodies) -> Content {
+    let unknown = Content { size: -1, mime_type: UNKNOWN_MIME.into(), text: None, encoding: None };
+    if e.response_body.is_none() {
+        return unknown;
+    }
+    let Some(view) = bodies(e.id, Side::Response) else { return unknown };
+    Content {
+        size: view.info.size as i64,
+        mime_type: mime(&view),
+        text: view.text,
+        encoding: None,
+    }
+}
+
+fn mime(view: &BodyView) -> String {
+    view.info.content_type.clone().unwrap_or_else(|| UNKNOWN_MIME.into())
 }
 
 /// The decoded `name=value` pairs after `?` in `url`.
@@ -303,7 +333,9 @@ pub async fn export_har(
         .find(|t| t.id == id)
         .map(|t| t.name)
         .unwrap_or_default();
-    let json = serde_json::to_vec_pretty(&build(&entries, &app.package_info().version.to_string()))
+    let tunnels = &state.tunnels;
+    let bodies = |entry_id: u64, side: Side| tunnels.request_body(&id, entry_id, side);
+    let json = serde_json::to_vec_pretty(&build_with(&entries, &app.package_info().version.to_string(), &bodies))
         .map_err(|e| e.to_string())?;
 
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -444,5 +476,42 @@ mod tests {
         assert_eq!(file_name("localhost:3000/api"), "localhost-3000-api.har");
         assert_eq!(file_name("..."), "requests.har");
         assert_eq!(file_name(""), "requests.har");
+    }
+
+    #[test]
+    fn proxied_bodies_and_response_headers() {
+        use crate::capture::BodyInfo;
+        let info = |t: &str| BodyInfo { size: 7, content_type: Some(t.into()), ..Default::default() };
+        let e = RequestEntry {
+            id: 9,
+            at: 1,
+            method: "POST".into(),
+            url: "https://a.trycloudflare.com/hook".into(),
+            status: Some(200),
+            proxied: Some(true),
+            request_body: Some(info("application/json")),
+            response_body: Some(info("text/plain")),
+            response_headers: Some(vec![
+                ("Content-Type".into(), "text/plain".into()),
+                ("Set-Cookie".into(), "(hidden, 9 characters)".into()),
+            ]),
+            ..Default::default()
+        };
+        let bodies = |id: u64, side: Side| {
+            assert_eq!(id, 9);
+            let (t, text) = match side {
+                Side::Request => ("application/json", r#"{"a":1}"#),
+                Side::Response => ("text/plain", "thanks!"),
+            };
+            Some(BodyView { info: info(t), text: Some(text.into()), decoded_from: None })
+        };
+        let har = serde_json::to_value(build_with(&[e], "1", &bodies)).unwrap();
+        let entry = &har["log"]["entries"][0];
+        assert_eq!(entry["request"]["postData"]["text"], r#"{"a":1}"#);
+        assert_eq!(entry["request"]["postData"]["mimeType"], "application/json");
+        assert_eq!(entry["response"]["content"]["text"], "thanks!");
+        assert_eq!(entry["response"]["content"]["size"], 7);
+        let headers = entry["response"]["headers"].as_array().unwrap();
+        assert_eq!(headers.len(), 1, "Set-Cookie is left out");
     }
 }

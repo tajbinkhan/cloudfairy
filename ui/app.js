@@ -165,6 +165,7 @@ function renderCard(t) {
   if (t.startOnOpen) tags.push("Starts with Cloudfairy");
   if (t.rewriteHost) tags.push("Host rewritten");
   if (t.named) tags.push(t.named.hostname);
+  tags.push(...(window.proxyUi?.cardTags(t) ?? []));
   $(".card-target", el).textContent = tags.join(" · ");
   $(".status-text", el).textContent = statusText(t);
 
@@ -342,6 +343,7 @@ function requestRowHtml(e, live) {
       <dl>${dl(facts)}</dl>
       ${e.headers.length ? `<h4>Request headers</h4><dl class="req-headers">${dl(e.headers)}</dl>` : ""}
       ${requestCurlHtml(e)}
+      ${window.proxyUi?.detailHtml(e) ?? ""}
     </div>`;
 }
 
@@ -582,6 +584,7 @@ function openEdit(t) {
   fillLinkFields(t);
   $("#edit-error").textContent = "";
   window.cfFolder?.openEdit(t);
+  window.proxyUi?.fillEdit(t);
   $("#edit-dialog").showModal();
 }
 
@@ -597,6 +600,7 @@ async function saveEdit() {
       rewriteHost: $("#edit-rewrite-host").checked,
       startOnOpen: $("#edit-start-on-open").checked,
     });
+    Object.assign(view, await window.proxyUi?.saveEdit(view.id));
     Object.assign(tunnels.get(view.id), view);
     renderCard(tunnels.get(view.id));
     $("#edit-dialog").close();
@@ -760,6 +764,7 @@ async function openSettings() {
   $("#copy-on-live").checked = s.copyOnLive;
   $("#app-version").textContent = `Cloudfairy ${s.appVersion}`;
   $("#settings-error").textContent = "";
+  window.proxyUi?.fillSettings();
   $("#settings-dialog").showModal();
   refreshCloudflared();
   refreshAccount();
@@ -777,6 +782,7 @@ async function saveSettings() {
         copyOnLive: $("#copy-on-live").checked,
       },
     });
+    await window.proxyUi?.saveSettings();
     await refreshCloudflared();
     if (cfInfo.problem && $("#cf-custom").value.trim()) {
       $("#settings-error").textContent = cfInfo.problem;
