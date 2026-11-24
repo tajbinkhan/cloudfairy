@@ -4,12 +4,16 @@
 mod app_update;
 mod background;
 mod child_guard;
+mod cli;
 mod cloudflared;
 mod har;
 mod lifecycle;
 mod link_hooks;
+mod deep_link;
+mod remote;
 mod requests;
 mod settings;
+mod transfer;
 mod tunnel;
 
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -296,19 +300,23 @@ fn main() {
     let app = tauri::Builder::default()
         // Must be first. A second copy would keep its own list of tunnels and overwrite
         // settings.json, so it exits and brings this window to the front instead.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             background::show_window(app);
+            // `cloudfairy start 3000`, or a cloudfairy:// link on Windows and Linux.
+            remote::handle_args(app, &args);
         }))
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec![MINIMIZED_ARG]),
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PendingUpdate::default())
+        .manage(remote::Inbox::default())
         .setup(|app| {
             // Kills cloudflared left running by a session that crashed.
             child_guard::init(&app.path().app_data_dir()?);
@@ -340,6 +348,7 @@ fn main() {
                 background::show_window(app.handle());
             }
             background::start_on_open(app.handle());
+            remote::init(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -377,6 +386,10 @@ fn main() {
             qr_svg,
             lifecycle::set_tunnel_lifecycle,
             lifecycle::lifecycle_states,
+            transfer::export_tunnels,
+            transfer::import_tunnels,
+            remote::take_remote_items,
+            remote::answer_link_request,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Cloudfairy");
