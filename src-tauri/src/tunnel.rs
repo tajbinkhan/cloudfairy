@@ -785,6 +785,10 @@ async fn probe_local(target: &str) -> Option<String> {
     // connection there takes about 2 s, which used up the timeout before 127.0.0.1 was tried.
     let connect = async {
         let addrs: Vec<_> = tokio::net::lookup_host(addr.clone()).await?.collect();
+        // `select_ok` panics on an empty list.
+        if addrs.is_empty() {
+            return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "no addresses"));
+        }
         let attempts = addrs.into_iter().map(|a| Box::pin(tokio::net::TcpStream::connect(a)));
         futures_util::future::select_ok(attempts).await.map(|_| ())
     };
