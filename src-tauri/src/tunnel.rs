@@ -19,10 +19,14 @@ use tokio::{
 };
 
 use crate::{
+    capture::Capture,
     child_guard,
+    proxy::ProxyHandle,
     requests::{RequestEntry, RequestLog},
     settings::TunnelConfig,
 };
+
+mod routed;
 
 const MAX_LOG_LINES: usize = 1000;
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -119,6 +123,10 @@ struct Runtime {
     metrics: Option<String>,
     live_announced: bool,
     fail_announced: bool,
+    /// Cloudfairy's proxy for this run, when it routes through one. Dropping it stops it.
+    proxy: Option<ProxyHandle>,
+    /// Requests the proxy recorded in the latest run. Kept after the run so the list stays.
+    capture: Option<Arc<Capture>>,
 }
 
 impl Runtime {
@@ -209,12 +217,21 @@ impl Tunnels {
     }
 
     pub fn requests(&self, id: &str) -> Vec<RequestEntry> {
-        self.map().get(id).map(|r| r.requests.entries()).unwrap_or_default()
+        self.map()
+            .get(id)
+            .map(|r| match &r.capture {
+                Some(capture) => capture.entries(),
+                None => r.requests.entries(),
+            })
+            .unwrap_or_default()
     }
 
     pub fn clear_requests(&self, id: &str) {
         if let Some(rt) = self.map().get_mut(id) {
             rt.requests.clear();
+            if let Some(capture) = &rt.capture {
+                capture.clear();
+            }
         }
     }
 
@@ -226,24 +243,40 @@ impl Tunnels {
         self.map().values().any(Runtime::active)
     }
 
+    /// Starts cloudflared. With `route`, cloudflared sends traffic to a new Cloudfairy proxy
+    /// for this run (see `proxy.rs`) instead of straight to the target.
     pub async fn start<R: TauriRuntime>(
         &self,
         app: &AppHandle<R>,
         cfg: &TunnelConfig,
         bin: &Path,
         protocol: &str,
+        route: bool,
     ) -> Result<(), String> {
-        let args = build_args(&cfg.target, protocol, cfg.rewrite_host);
+        if self.is_active(&cfg.id) {
+            return Err("This tunnel is already running.".into());
+        }
+        let run_id = self.inner.next_run.fetch_add(1, Ordering::Relaxed) + 1;
+        let proxy = match route.then(|| self.launch_proxy(app, cfg, run_id)) {
+            Some(Ok(proxy)) => Some(proxy),
+            Some(Err(e)) => {
+                self.fail(app, &cfg.id, e.clone());
+                return Err(e);
+            }
+            None => None,
+        };
+        let url = proxy.as_ref().map_or_else(|| cfg.target.clone(), ProxyHandle::url);
+        let args = build_args(&url, protocol, cfg.rewrite_host && proxy.is_none());
         let command_line = format!("{} {}", bin.display(), args.join(" "));
 
         // Claim the tunnel before the first await, so two quick clicks can't both launch it.
-        let run_id = {
+        // If the claim fails, dropping `proxy` stops it again.
+        {
             let mut map = self.map();
             let rt = map.entry(cfg.id.clone()).or_default();
             if rt.active() {
                 return Err("This tunnel is already running.".into());
             }
-            let run_id = self.inner.next_run.fetch_add(1, Ordering::Relaxed) + 1;
             rt.view = RuntimeView {
                 status: Status::Starting,
                 started_at: Some(now_ms()),
@@ -265,9 +298,17 @@ impl Tunnels {
                      Anyone with the link can reach it while the tunnel runs."
                 ));
             }
+            rt.capture = proxy.as_ref().map(ProxyHandle::capture);
+            if let Some(proxy) = &proxy {
+                rt.log(format!(
+                    "[cloudfairy] Routing requests through Cloudfairy at {} to {}.",
+                    proxy.url(),
+                    cfg.target
+                ));
+            }
+            rt.proxy = proxy;
             self.emit(app, &cfg.id, rt);
-            run_id
-        };
+        }
 
         let mut cmd = Command::new(bin);
         cmd.args(&args)
@@ -293,6 +334,7 @@ impl Tunnels {
                 Ok(child) => child,
                 Err(e) => {
                     let msg = format!("Couldn't launch cloudflared at {}: {e}", bin.display());
+                    rt.proxy = None;
                     rt.view = RuntimeView {
                         status: Status::Error,
                         error: Some(msg.clone()),
@@ -362,6 +404,7 @@ impl Tunnels {
     pub fn kill_all(&self) {
         for rt in self.map().values_mut() {
             rt.stopping = true;
+            rt.proxy = None;
             if let Some(child) = rt.child.as_mut() {
                 let _ = child.start_kill();
             }
@@ -526,6 +569,7 @@ impl Tunnels {
         rt.log(format!("[cloudfairy] cloudflared exited ({description})"));
         rt.metrics = None;
         rt.requests.end_run();
+        rt.proxy = None;
         self.emit(&app, &id, rt);
     }
 }
@@ -652,14 +696,14 @@ pub fn normalize_target(input: &str) -> Result<String, String> {
 }
 
 /// The `host[:port]` part of a URL, as a browser would send it in the `Host` header.
-fn host_header(url: &str) -> Option<String> {
+pub(crate) fn host_header(url: &str) -> Option<String> {
     let (_, rest) = url.split_once("://")?;
     let authority = rest.split(['/', '?', '#']).next()?;
     let authority = authority.rsplit('@').next()?;
     (!authority.is_empty()).then(|| authority.to_string())
 }
 
-fn host_port(url: &str) -> Option<(String, u16)> {
+pub(crate) fn host_port(url: &str) -> Option<(String, u16)> {
     let (scheme, rest) = url.split_once("://")?;
     let authority = rest.split(['/', '?', '#']).next()?;
     let authority = authority.rsplit('@').next()?;
@@ -680,7 +724,7 @@ fn host_port(url: &str) -> Option<(String, u16)> {
     }
 }
 
-fn is_loopback(host: &str) -> bool {
+pub(crate) fn is_loopback(host: &str) -> bool {
     let h = host.trim_matches(['[', ']']).to_ascii_lowercase();
     h == "localhost" || h.ends_with(".localhost") || h == "::1" || h == "0.0.0.0" || h.starts_with("127.")
 }
@@ -883,14 +927,15 @@ mod tests {
                 target: normalize_target(&format!("127.0.0.1:{port}")).unwrap(),
                 rewrite_host: false,
                 start_on_open: false,
+                ..Default::default()
             };
             let bin = which::which("cloudflared").expect("cloudflared on PATH");
             let changes = Arc::new(Mutex::new(Vec::new()));
             let sink = changes.clone();
             tunnels.set_listener(move |c| sink.lock().unwrap().push(c));
 
-            tunnels.start(&handle, &cfg, &bin, "auto").await.unwrap();
-            assert!(tunnels.start(&handle, &cfg, &bin, "auto").await.is_err(), "double start is rejected");
+            tunnels.start(&handle, &cfg, &bin, "auto", false).await.unwrap();
+            assert!(tunnels.start(&handle, &cfg, &bin, "auto", false).await.is_err(), "double start is rejected");
             assert!(tunnels.view(cfg.clone()).runtime.warning.is_some(), "warns while nothing listens");
 
             let view = wait_for(&tunnels, &cfg, 60, |v| v.status == Status::Running && v.public_url.is_some()).await;

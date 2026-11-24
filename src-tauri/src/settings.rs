@@ -9,7 +9,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TunnelConfig {
     pub id: String,
@@ -23,6 +23,23 @@ pub struct TunnelConfig {
     /// Start this tunnel when Cloudfairy opens.
     #[serde(default)]
     pub start_on_open: bool,
+    /// Basic auth on the public link. An empty password turns it off. Needs the proxy.
+    #[serde(default)]
+    pub auth_user: String,
+    #[serde(default)]
+    pub auth_password: String,
+    /// Answer CORS preflight requests and add `Access-Control-Allow-*` headers. Needs the proxy.
+    #[serde(default)]
+    pub cors: bool,
+    /// Headers added to every response. Needs the proxy.
+    #[serde(default)]
+    pub extra_headers: Vec<HeaderPair>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HeaderPair {
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -39,6 +56,9 @@ pub struct Settings {
     pub notify: bool,
     /// Copy a tunnel's link to the clipboard when it goes live.
     pub copy_on_live: bool,
+    /// Send tunnel traffic through Cloudfairy's local proxy (see `proxy.rs`), which records
+    /// requests with bodies and adds password protection, CORS and extra headers.
+    pub route_through_proxy: bool,
 }
 
 impl Default for Settings {
@@ -50,6 +70,7 @@ impl Default for Settings {
             close_to_tray: true,
             notify: true,
             copy_on_live: false,
+            route_through_proxy: true,
         }
     }
 }
@@ -111,5 +132,24 @@ mod tests {
         assert!(s.close_to_tray && s.notify && !s.copy_on_live);
         let t = &s.tunnels[0];
         assert!(!t.rewrite_host && !t.start_on_open);
+        assert!(s.route_through_proxy, "the proxy is on for existing installs");
+        assert!(t.auth_user.is_empty() && t.auth_password.is_empty() && !t.cors && t.extra_headers.is_empty());
+    }
+
+    #[test]
+    fn proxy_options_round_trip() {
+        let t = TunnelConfig {
+            id: "t1".into(),
+            auth_user: "me".into(),
+            auth_password: "pw".into(),
+            cors: true,
+            extra_headers: vec![HeaderPair { name: "X-Test".into(), value: "1".into() }],
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(json.contains(r#""authPassword":"pw""#));
+        assert!(json.contains(r#""extraHeaders":[{"name":"X-Test","value":"1"}]"#));
+        let back: TunnelConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!((back.cors, back.extra_headers), (true, t.extra_headers));
     }
 }

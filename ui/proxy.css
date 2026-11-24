@@ -1,0 +1,56 @@
+/* Cloudfairy's proxy options and the request detail parts that come from it (proxy.js). */
+
+/* ---------- edit dialog ---------- */
+.proxy-options { display: flex; flex-direction: column; gap: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.proxy-auth { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.header-rows { display: flex; flex-direction: column; gap: 8px; }
+.header-rows:empty { display: none; }
+.header-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto; gap: 8px; align-items: center; }
+.header-row input {
+  min-width: 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.header-row input:focus { border-color: var(--accent); outline: 3px solid var(--focus); outline-offset: 0; }
+.add-header { align-self: flex-start; }
+.proxy-options :disabled { opacity: 0.55; cursor: not-allowed; }
+
+@media (max-width: 480px) {
+  .proxy-auth { grid-template-columns: 1fr; }
+}
+
+/* ---------- request detail ---------- */
+.req-detail .body-meta { color: var(--muted); }
+.req-detail .body-text {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.req-detail .body-text[data-state="error"] { color: var(--err); }
+.req-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.req-actions .hint { font-size: 12px; }
+.req-replay { margin-top: 8px; color: var(--muted); }
+.req-proxy-note { margin-top: 10px; font-size: 12px; }
+
+/* Replayed requests are marked in the list itself. */
+.req-list li:has(.req-replay) .req-path::after {
+  content: "replay";
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--muted);
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+}

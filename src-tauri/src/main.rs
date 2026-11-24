@@ -3,8 +3,11 @@
 
 mod app_update;
 mod background;
+mod capture;
 mod child_guard;
 mod cloudflared;
+mod proxy;
+mod proxy_cmds;
 mod requests;
 mod settings;
 mod tunnel;
@@ -61,6 +64,7 @@ fn add_tunnel(app: AppHandle, state: State<AppState>, name: String, target: Stri
         target,
         rewrite_host: false,
         start_on_open: false,
+        ..Default::default()
     };
     state.settings.update(|s| s.tunnels.push(cfg.clone()))?;
     background::refresh_tray(&app);
@@ -124,7 +128,7 @@ async fn start_one(app: &AppHandle, id: &str) -> CmdResult<TunnelView> {
     let (bin, _) = cloudflared::resolve(app, settings.cloudflared_path.as_deref())?;
     state
         .tunnels
-        .start(app, &cfg, &bin, &settings.protocol)
+        .start(app, &cfg, &bin, &settings.protocol, settings.route_through_proxy)
         .await?;
     Ok(state.tunnels.view(cfg))
 }
@@ -366,6 +370,11 @@ fn main() {
             open_url,
             copy_text,
             qr_svg,
+            proxy_cmds::request_body,
+            proxy_cmds::replay_request,
+            proxy_cmds::update_tunnel_proxy,
+            proxy_cmds::get_proxy_settings,
+            proxy_cmds::save_proxy_settings,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Cloudfairy");
