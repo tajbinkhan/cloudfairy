@@ -24,6 +24,8 @@ use crate::{
     settings::TunnelConfig,
 };
 
+mod named_start;
+
 const MAX_LOG_LINES: usize = 1000;
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 /// How often request counts are read from cloudflared's metrics server, in poll ticks (2 s).
@@ -119,6 +121,8 @@ struct Runtime {
     metrics: Option<String>,
     live_announced: bool,
     fail_announced: bool,
+    /// This run is a named tunnel on the user's domain (see `named_start.rs`).
+    named: bool,
 }
 
 impl Runtime {
@@ -241,8 +245,8 @@ impl Tunnels {
         bin: &Path,
         protocol: &str,
     ) -> Result<(), String> {
-        let args = build_args(&cfg.target, protocol, cfg.rewrite_host);
-        let command_line = format!("{} {}", bin.display(), args.join(" "));
+        let mut args = build_args(&cfg.target, protocol, cfg.rewrite_host);
+        let mut command_line = format!("{} {}", bin.display(), args.join(" "));
 
         // Claim the tunnel before the first await, so two quick clicks can't both launch it.
         let run_id = {
@@ -266,7 +270,11 @@ impl Tunnels {
             rt.conns.clear();
             rt.logs.clear();
             rt.requests.clear();
-            rt.log(format!("$ {command_line}"));
+            rt.named = cfg.named.is_some();
+            // A named tunnel logs its command once it knows the tunnel's UUID.
+            if !rt.named {
+                rt.log(format!("$ {command_line}"));
+            }
             if let Some(host) = cfg.rewrite_host.then(|| host_header(&cfg.target)).flatten() {
                 rt.log(format!(
                     "[cloudfairy] Sending \"Host: {host}\" to your server. \
@@ -276,6 +284,14 @@ impl Tunnels {
             self.emit(app, &cfg.id, rt);
             run_id
         };
+
+        if let Some(named) = &cfg.named {
+            match self.prepare_named(app, cfg, named, bin, run_id, args).await? {
+                Some(prepared) => (args, command_line) = prepared,
+                // Stopped while the Cloudflare tunnel was being set up.
+                None => return Ok(()),
+            }
+        }
 
         let mut cmd = Command::new(bin);
         cmd.args(&args)
@@ -408,6 +424,7 @@ impl Tunnels {
         if rt.metrics.is_none() && rt.view.status == Status::Starting && rt.conns.is_empty() {
             rt.metrics = metrics_addr(&line);
         }
+        let named = rt.named;
         let view = &mut rt.view;
         let mut changed = false;
         if view.public_url.is_none() {
@@ -448,7 +465,7 @@ impl Tunnels {
             changed = true;
         } else if let Some(msg) = error_message(&line) {
             if !rt.stopping && view.status != Status::Running {
-                view.error = Some(msg);
+                view.error = Some(if named { crate::named::friendly_error(&msg) } else { msg });
                 changed = true;
             }
         }
@@ -892,6 +909,7 @@ mod tests {
                 rewrite_host: false,
                 start_on_open: false,
                 lifecycle: Default::default(),
+                named: None,
             };
             let bin = which::which("cloudflared").expect("cloudflared on PATH");
             let changes = Arc::new(Mutex::new(Vec::new()));

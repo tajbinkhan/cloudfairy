@@ -11,6 +11,7 @@ mod lifecycle;
 mod link_hooks;
 mod deep_link;
 mod remote;
+mod named;
 mod requests;
 mod settings;
 mod transfer;
@@ -69,6 +70,7 @@ fn add_tunnel(app: AppHandle, state: State<AppState>, name: String, target: Stri
         rewrite_host: false,
         start_on_open: false,
         lifecycle: Default::default(),
+        named: None,
     };
     state.settings.update(|s| s.tunnels.push(cfg.clone()))?;
     background::refresh_tray(&app);
@@ -390,6 +392,12 @@ fn main() {
             transfer::import_tunnels,
             remote::take_remote_items,
             remote::answer_link_request,
+            named::cloudflare_account,
+            named::cloudflare_login,
+            named::cloudflare_login_cancel,
+            named::add_named_tunnel,
+            named::set_tunnel_hostname,
+            named::remove_named_tunnel,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Cloudfairy");

@@ -1,0 +1,6 @@
+/* Named tunnels: the account box in Settings and the link choice in the Edit dialog. */
+.link-kind { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.link-kind legend { padding: 0; margin-bottom: 10px; }
+.link-kind .hint { line-height: 1.45; }
+#cf-account .hint { line-height: 1.45; }
+.account-url { display: block; margin-top: 4px; font-size: 12px; color: var(--accent); word-break: break-all; }

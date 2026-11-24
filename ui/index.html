@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="request-tools.css" />
   <link rel="stylesheet" href="lifecycle.css" />
   <link rel="stylesheet" href="extras.css" />
+  <link rel="stylesheet" href="named.css" />
 </head>
 <body>
   <header class="topbar">
@@ -56,6 +57,10 @@
         <label class="field">
           <span>Name <em>(optional)</em></span>
           <input id="name" name="name" placeholder="My app" />
+        </label>
+        <label class="field" id="domain-field" hidden>
+          <span>Your domain <em>(optional)</em></span>
+          <input id="hostname" name="hostname" placeholder="app.example.com" spellcheck="false" />
         </label>
         <button class="btn primary" type="submit">Create tunnel</button>
       </div>
@@ -111,6 +116,24 @@
       <p id="settings-error" class="form-error" role="alert"></p>
       <p class="hint">Protocol and path changes apply to tunnels you start after saving.</p>
 
+      <div class="cf-box" id="cf-account">
+        <div class="cf-box-row">
+          <div>
+            <div class="label">Cloudflare account (optional)</div>
+            <div id="account-detail" class="cf-detail">Checking…</div>
+            <div id="account-path" class="cf-path mono"></div>
+          </div>
+          <button id="account-login" class="btn" type="button" hidden>Sign in</button>
+          <button id="account-cancel" class="btn ghost" type="button" hidden>Cancel</button>
+        </div>
+        <p id="account-hint" class="hint"></p>
+        <div id="account-pending" hidden>
+          <p class="hint">Finish signing in in your browser and pick the domain to use. If no browser opened, open this link:</p>
+          <a id="account-url" class="mono account-url" href="#"></a>
+        </div>
+        <p id="account-error" class="form-error" role="alert"></p>
+      </div>
+
       <div class="field-group">
         <div class="label">In the background</div>
         <label class="check" id="close-to-tray-row">
@@ -150,6 +173,22 @@
         <span>Local port or address</span>
         <input id="edit-target" spellcheck="false" />
       </label>
+      <fieldset class="link-kind">
+        <legend class="label">Public link</legend>
+        <label class="check">
+          <input type="radio" name="edit-kind" id="edit-kind-quick" value="quick" />
+          <span>Random trycloudflare.com link</span>
+        </label>
+        <label class="check">
+          <input type="radio" name="edit-kind" id="edit-kind-named" value="named" />
+          <span>My domain</span>
+        </label>
+        <label class="field" id="edit-hostname-field">
+          <span>Hostname</span>
+          <input id="edit-hostname" placeholder="app.example.com" spellcheck="false" aria-describedby="edit-hostname-hint" />
+        </label>
+        <p id="edit-hostname-hint" class="hint"></p>
+      </fieldset>
       <label class="check">
         <input type="checkbox" id="edit-start-on-open" />
         <span>Start when Cloudfairy opens</span>
@@ -222,6 +261,23 @@
     </form>
   </dialog>
 
+  <dialog id="remove-named-dialog" class="dialog">
+    <form method="dialog">
+      <h2>Remove tunnel</h2>
+      <p id="remove-named-text"></p>
+      <label class="check">
+        <input type="checkbox" id="remove-named-delete" aria-describedby="remove-named-hint" />
+        <span>Also delete it from my Cloudflare account</span>
+      </label>
+      <p id="remove-named-hint" class="hint check-hint"></p>
+      <p id="remove-named-error" class="form-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel" type="submit" formnovalidate>Cancel</button>
+        <button class="btn primary" id="remove-named-confirm" type="button">Remove</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" hidden></div>
 
   <script src="request-tools.js"></script>
@@ -230,5 +286,6 @@
   <script src="shortcuts.js"></script>
   <script src="transfer.js"></script>
   <script src="remote.js"></script>
+  <script src="named.js"></script>
 </body>
 </html>

@@ -164,6 +164,7 @@ function renderCard(t) {
   const tags = [t.target];
   if (t.startOnOpen) tags.push("Starts with Cloudfairy");
   if (t.rewriteHost) tags.push("Host rewritten");
+  if (t.named) tags.push(t.named.hostname);
   $(".card-target", el).textContent = tags.join(" · ");
   $(".status-text", el).textContent = statusText(t);
 
@@ -443,6 +444,8 @@ async function startTunnel(id) {
 
 const pendingRemove = new Map();
 async function removeTunnel(id, btn) {
+  // Named tunnels ask whether to delete them from the Cloudflare account too (named.js).
+  if (tunnels.get(id)?.named?.tunnelId) return removeNamedTunnel(id);
   if (!pendingRemove.has(id)) {
     $("span", btn).textContent = "Click again to remove";
     btn.classList.add("danger");
@@ -552,7 +555,7 @@ async function onCreate(ev) {
   const name = $("#name").value;
   let view;
   try {
-    view = await invoke("add_tunnel", { name, target });
+    view = await addTunnelFromComposer(name, target);
   } catch (e) {
     errorEl.textContent = errText(e);
     $("#target").focus();
@@ -575,6 +578,7 @@ function openEdit(t) {
   $("#edit-rewrite-host").checked = Boolean(t.rewriteHost);
   $("#edit-start-on-open").checked = Boolean(t.startOnOpen);
   window.lifecycleUi?.fill(t);
+  fillLinkFields(t);
   $("#edit-error").textContent = "";
   $("#edit-dialog").showModal();
 }
@@ -582,6 +586,7 @@ function openEdit(t) {
 async function saveEdit() {
   try {
     await window.lifecycleUi?.save(editingId);
+    await saveLinkFields(editingId);
     const view = await invoke("update_tunnel", {
       id: editingId,
       name: $("#edit-name").value,
@@ -754,6 +759,7 @@ async function openSettings() {
   $("#settings-error").textContent = "";
   $("#settings-dialog").showModal();
   refreshCloudflared();
+  refreshAccount();
 }
 
 async function saveSettings() {
