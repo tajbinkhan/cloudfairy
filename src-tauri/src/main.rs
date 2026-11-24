@@ -5,6 +5,7 @@ mod app_update;
 mod background;
 mod child_guard;
 mod cloudflared;
+mod har;
 mod requests;
 mod settings;
 mod tunnel;
@@ -297,6 +298,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec![MINIMIZED_ARG]),
@@ -356,6 +358,7 @@ fn main() {
             tunnel_logs,
             tunnel_requests,
             clear_tunnel_requests,
+            har::export_har,
             get_settings,
             save_settings,
             cloudflared_info,

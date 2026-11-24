@@ -1,0 +1,34 @@
+/* Filter row, Copy as cURL and Export HAR in the request list (request-tools.js). */
+.req-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.req-filter input,
+.req-filter select {
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  min-width: 0;
+}
+.req-filter input { flex: 1 1 160px; font-family: var(--mono); }
+.req-filter input:focus,
+.req-filter select:focus { border-color: var(--accent); outline: 3px solid var(--focus); outline-offset: 0; }
+.req-filter-count { flex: 1 0 auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.req-no-match { margin: 0; padding: 14px 12px; color: var(--muted); font-size: 13px; }
+
+/* Hidden rows still count as siblings, so draw each border from the rows that are shown. */
+.req-list li[hidden] { display: none; }
+.req-list li + li { border-top: 0; }
+.req-list li:not([hidden]) ~ li { border-top: 1px solid var(--border); }
+
+.req-curl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 10px; }
+.req-curl-note { flex: 1 1 200px; color: var(--muted); }
